@@ -79,7 +79,9 @@ module JsonSchemaValidator
       @root = schema
       @validate_content = content
       @registry = {}
-      @unindexed_documents = {}
+      @external_schemas = schemas
+      @indexed_external_documents = {}
+      @indexed_external_schemas = {}
       @bases = {}
       @ref_bases = {}
       @keyword_masks = {}
@@ -89,12 +91,6 @@ module JsonSchemaValidator
       @root_base = absolute_id(base_uri.to_s, schema.is_a?(Hash) ? schema["$id"] : nil)
       @root_base = base_uri.to_s if @root_base.empty? && base_uri
 
-      schemas.each do |uri, external_schema|
-        external_uri = uri.to_s
-        document_uri = strip_fragment(external_uri)
-        @registry[document_uri] ||= external_schema
-        (@unindexed_documents[document_uri] ||= []) << [external_schema, external_uri]
-      end
       @registry[DRAFT7_META_SCHEMA_URI] = DRAFT7_META_SCHEMA
       index(schema, @root_base)
       @registry[strip_fragment(@root_base)] ||= schema unless @root_base.empty?
@@ -109,11 +105,202 @@ module JsonSchemaValidator
     end
 
     def valid?(instance)
-      @errors = nil
-      @error_count = 0
       @active = {}
-      evaluate(@root, instance, @root_base, nil, nil)
-      @error_count.zero?
+      evaluate_valid(@root, instance, @root_base)
+    end
+
+    private def evaluate_valid(schema, instance, base)
+      return schema if schema == true || schema == false
+      return true unless schema.is_a?(Hash)
+
+      base = @bases.fetch(schema.object_id, base)
+      if schema.key?("$ref")
+        state = [schema.object_id, instance.object_id]
+        return true if @active[state]
+
+        @active[state] = true
+        return begin
+          target, target_base = resolve(schema["$ref"], @ref_bases.fetch(schema.object_id, base))
+          evaluate_valid(target, instance, target_base)
+        rescue ResolutionError
+          false
+        ensure
+          @active.delete(state)
+        end
+      end
+
+      keywords = @keyword_masks.fetch(schema.object_id)
+      return false if (keywords & TYPE_KEYWORDS) != 0 && !valid_type?(schema, instance)
+      return false if (keywords & ENUM_KEYWORDS) != 0 && !valid_enum?(schema, instance)
+      return false if (keywords & COMBINER_KEYWORDS) != 0 && !valid_combiners?(schema, instance, base)
+
+      case instance
+      when Hash
+        (keywords & OBJECT_KEYWORDS) == 0 || valid_object?(schema, instance, base)
+      when Array
+        (keywords & ARRAY_KEYWORDS) == 0 || valid_array?(schema, instance, base)
+      when String
+        (keywords & STRING_KEYWORDS) == 0 || valid_string?(schema, instance)
+      when Numeric
+        instance.is_a?(Complex) || (keywords & NUMBER_KEYWORDS) == 0 || valid_number?(schema, instance)
+      else
+        true
+      end
+    end
+
+    private def valid_type?(schema, value)
+      types = schema["type"]
+      return types.any? { |type| type?(value, type) } if types.is_a?(Array)
+
+      type?(value, types)
+    end
+
+    private def valid_enum?(schema, value)
+      return false if schema.key?("enum") && !schema["enum"].any? { |candidate| json_equal?(candidate, value) }
+      return false if schema.key?("const") && !json_equal?(schema["const"], value)
+
+      true
+    end
+
+    private def valid_combiners?(schema, value, base)
+      return false if schema.key?("allOf") && !schema["allOf"].all? { |subschema| evaluate_valid(subschema, value, base) }
+      return false if schema.key?("anyOf") && !schema["anyOf"].any? { |subschema| evaluate_valid(subschema, value, base) }
+
+      if schema.key?("oneOf")
+        matches = 0
+        schema["oneOf"].each do |subschema|
+          matches += 1 if evaluate_valid(subschema, value, base)
+          return false if matches > 1
+        end
+        return false unless matches == 1
+      end
+
+      return false if schema.key?("not") && evaluate_valid(schema["not"], value, base)
+
+      if schema.key?("if")
+        branch = evaluate_valid(schema["if"], value, base) ? "then" : "else"
+        return false if schema.key?(branch) && !evaluate_valid(schema[branch], value, base)
+      end
+
+      true
+    end
+
+    private def valid_number?(schema, value)
+      actual = nil
+      if schema.key?("maximum")
+        actual ||= decimal(value)
+        return false unless actual <= decimal(schema["maximum"])
+      end
+      if schema.key?("minimum")
+        actual ||= decimal(value)
+        return false unless actual >= decimal(schema["minimum"])
+      end
+      if schema.key?("exclusiveMaximum")
+        actual ||= decimal(value)
+        return false unless actual < decimal(schema["exclusiveMaximum"])
+      end
+      if schema.key?("exclusiveMinimum")
+        actual ||= decimal(value)
+        return false unless actual > decimal(schema["exclusiveMinimum"])
+      end
+      if schema.key?("multipleOf")
+        divisor = decimal(schema["multipleOf"])
+        return false unless divisor.positive?
+        return false unless (actual || decimal(value)).remainder(divisor).zero?
+      end
+      true
+    end
+
+    private def valid_string?(schema, value)
+      length = value.length
+      return false if schema.key?("maxLength") && length > schema["maxLength"]
+      return false if schema.key?("minLength") && length < schema["minLength"]
+      return false if schema.key?("pattern") && !ecma_regexp(schema["pattern"]).match?(value)
+      return valid_content?(schema, value) if @validate_content
+
+      true
+    rescue RegexpError
+      false
+    end
+
+    private def valid_content?(schema, value)
+      decoded = (schema["contentEncoding"] == "base64") ? Base64.strict_decode64(value) : value
+      JSON.parse(decoded) if schema["contentMediaType"] == "application/json"
+      true
+    rescue ArgumentError, JSON::ParserError
+      false
+    end
+
+    private def valid_array?(schema, value, base)
+      length = value.length
+      return false if schema.key?("maxItems") && length > schema["maxItems"]
+      return false if schema.key?("minItems") && length < schema["minItems"]
+      if schema["uniqueItems"]
+        value.each_with_index do |item, index|
+          return false if value[0...index].any? { |previous| json_equal?(previous, item) }
+        end
+      end
+
+      items = schema["items"]
+      if items.is_a?(Array)
+        items.each_with_index do |subschema, index|
+          break if index >= length
+          return false unless evaluate_valid(subschema, value[index], base)
+        end
+        if length > items.length && schema.key?("additionalItems")
+          (items.length...length).each do |index|
+            return false unless evaluate_valid(schema["additionalItems"], value[index], base)
+          end
+        end
+      elsif !items.nil?
+        value.each { |item| return false unless evaluate_valid(items, item, base) }
+      end
+
+      return false if schema.key?("contains") && !value.any? { |item| evaluate_valid(schema["contains"], item, base) }
+
+      true
+    end
+
+    private def valid_object?(schema, value, base)
+      length = value.length
+      return false if schema.key?("maxProperties") && length > schema["maxProperties"]
+      return false if schema.key?("minProperties") && length < schema["minProperties"]
+      return false if schema.key?("required") && !schema["required"].all? { |name| value.key?(name) }
+
+      properties = schema["properties"]
+      patterns = schema["patternProperties"]
+      additional = schema["additionalProperties"] if schema.key?("additionalProperties")
+      value.each do |name, property_value|
+        matched = false
+        if properties&.key?(name)
+          matched = true
+          return false unless evaluate_valid(properties[name], property_value, base)
+        end
+        if patterns
+          patterns.each do |pattern, subschema|
+            next unless ecma_regexp(pattern).match?(name)
+            matched = true
+            return false unless evaluate_valid(subschema, property_value, base)
+          end
+        end
+        return false if !matched && !additional.nil? && !evaluate_valid(additional, property_value, base)
+      end
+
+      if schema.key?("propertyNames")
+        value.each_key { |name| return false unless evaluate_valid(schema["propertyNames"], name, base) }
+      end
+
+      if schema.key?("dependencies")
+        schema["dependencies"].each do |name, dependency|
+          next unless value.key?(name)
+          if dependency.is_a?(Array)
+            return false unless dependency.all? { |required_name| value.key?(required_name) }
+          else
+            return false unless evaluate_valid(dependency, value, base)
+          end
+        end
+      end
+      true
     end
 
     private def evaluate(schema, instance, base, instance_path, schema_path)
@@ -138,10 +325,17 @@ module JsonSchemaValidator
       check_type(schema, instance, instance_path, schema_path) if (keywords & TYPE_KEYWORDS) != 0
       check_enum(schema, instance, instance_path, schema_path) if (keywords & ENUM_KEYWORDS) != 0
       check_combiners(schema, instance, base, instance_path, schema_path) if (keywords & COMBINER_KEYWORDS) != 0
-      check_number(schema, instance, instance_path, schema_path) if (keywords & NUMBER_KEYWORDS) != 0 && number?(instance)
-      check_string(schema, instance, instance_path, schema_path) if (keywords & STRING_KEYWORDS) != 0 && instance.is_a?(String)
-      check_array(schema, instance, base, instance_path, schema_path) if (keywords & ARRAY_KEYWORDS) != 0 && instance.is_a?(Array)
-      check_object(schema, instance, base, instance_path, schema_path) if (keywords & OBJECT_KEYWORDS) != 0 && instance.is_a?(Hash)
+
+      case instance
+      when Hash
+        check_object(schema, instance, base, instance_path, schema_path) if (keywords & OBJECT_KEYWORDS) != 0
+      when Array
+        check_array(schema, instance, base, instance_path, schema_path) if (keywords & ARRAY_KEYWORDS) != 0
+      when String
+        check_string(schema, instance, instance_path, schema_path) if (keywords & STRING_KEYWORDS) != 0
+      when Numeric
+        check_number(schema, instance, instance_path, schema_path) if !instance.is_a?(Complex) && (keywords & NUMBER_KEYWORDS) != 0
+      end
 
       @error_count == before
     rescue ResolutionError => e
@@ -481,8 +675,8 @@ module JsonSchemaValidator
       document_uri = strip_fragment(uri)
       index_external(document_uri)
       unless @registry.key?(uri)
-        @unindexed_documents.each_key do |unindexed_uri|
-          index_external(unindexed_uri)
+        @external_schemas.each do |external_uri, external_schema|
+          index_external_schema(external_uri.to_s, external_schema)
           break if @registry.key?(uri)
         end
       end
@@ -506,8 +700,29 @@ module JsonSchemaValidator
     end
 
     private def index_external(document_uri)
-      external_schemas = @unindexed_documents.delete(document_uri)
-      external_schemas&.each { |external| index(*external) }
+      return if @indexed_external_documents[document_uri]
+
+      @indexed_external_documents[document_uri] = true
+      if @external_schemas.key?(document_uri)
+        external_schema = @external_schemas[document_uri]
+        index_external_schema(document_uri, external_schema)
+        return
+      end
+
+      @external_schemas.each do |external_uri, external_schema|
+        external_uri = external_uri.to_s
+        next unless strip_fragment(external_uri) == document_uri
+
+        index_external_schema(external_uri, external_schema)
+      end
+    end
+
+    private def index_external_schema(external_uri, external_schema)
+      return if @indexed_external_schemas[external_uri]
+
+      @indexed_external_schemas[external_uri] = true
+      @registry[strip_fragment(external_uri)] ||= external_schema
+      index(external_schema, external_uri)
     end
 
     private def pointer(document, raw_fragment)
@@ -531,9 +746,15 @@ module JsonSchemaValidator
     end
 
     private def absolute_id(base, identifier)
-      return base.to_s if identifier.nil?
-      return identifier.to_s if base.to_s.empty?
-      URI.join(base.to_s, identifier.to_s).to_s
+      base = base.to_s
+      return base if identifier.nil?
+
+      identifier = identifier.to_s
+      return identifier if base.empty? || identifier.match?(/\A[A-Za-z][A-Za-z0-9+.-]*:/)
+      return strip_fragment(base) if identifier.empty?
+      return "#{strip_fragment(base)}#{identifier}" if identifier.start_with?("#")
+
+      URI.join(base, identifier).to_s
     rescue URI::Error
       begin
         URI.join("resolve:///", base.to_s, identifier.to_s).to_s.delete_prefix("resolve:///")
@@ -543,11 +764,13 @@ module JsonSchemaValidator
     end
 
     private def strip_fragment(uri)
-      uri.sub(/#.*/, "")
+      index = uri.index("#")
+      index ? uri[0, index] : uri
     end
 
     private def fragment(uri)
-      uri.include?("#") ? uri.split("#", 2).last : ""
+      index = uri.index("#")
+      index ? uri[(index + 1)..] : ""
     end
 
     private def append(path, segment)

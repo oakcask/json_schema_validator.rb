@@ -18,6 +18,7 @@ RSpec.describe "JSON Schema Draft 7 official suite" do
         it "#{File.basename(file)}: #{group.fetch("description")} / #{test.fetch("description")}" do
           result = JsonSchemaValidator.validate(group.fetch("schema"), test.fetch("data"), schemas: remotes)
           expect(result.valid?).to eq(test.fetch("valid")), -> { result.errors.map(&:to_h).inspect }
+          expect(JsonSchemaValidator.valid?(group.fetch("schema"), test.fetch("data"), schemas: remotes)).to eq(test.fetch("valid"))
         end
       end
     end
@@ -31,6 +32,7 @@ RSpec.describe "JSON Schema Draft 7 official suite" do
         it "optional/#{File.basename(file)}: #{group.fetch("description")} / #{test.fetch("description")}" do
           result = JsonSchemaValidator.validate(group.fetch("schema"), test.fetch("data"), schemas: remotes, content: true)
           expect(result.valid?).to eq(test.fetch("valid")), -> { result.errors.map(&:to_h).inspect }
+          expect(JsonSchemaValidator.valid?(group.fetch("schema"), test.fetch("data"), schemas: remotes, content: true)).to eq(test.fetch("valid"))
         end
       end
     end
