@@ -5,6 +5,53 @@ require "uri"
 require "base64"
 
 module JsonSchemaValidator
+  DRAFT7_META_SCHEMA_URI = "http://json-schema.org/draft-07/schema"
+  DRAFT7_META_SCHEMA = JSON.parse(
+    File.read(File.join(__dir__, "json_schema_validator", "draft7_schema.json"))
+  )
+
+  TYPE_KEYWORDS = 1
+  ENUM_KEYWORDS = 2
+  COMBINER_KEYWORDS = 4
+  NUMBER_KEYWORDS = 8
+  STRING_KEYWORDS = 16
+  ARRAY_KEYWORDS = 32
+  OBJECT_KEYWORDS = 64
+  KEYWORD_MASKS = {
+    "type" => TYPE_KEYWORDS,
+    "enum" => ENUM_KEYWORDS,
+    "const" => ENUM_KEYWORDS,
+    "allOf" => COMBINER_KEYWORDS,
+    "anyOf" => COMBINER_KEYWORDS,
+    "oneOf" => COMBINER_KEYWORDS,
+    "not" => COMBINER_KEYWORDS,
+    "if" => COMBINER_KEYWORDS,
+    "maximum" => NUMBER_KEYWORDS,
+    "minimum" => NUMBER_KEYWORDS,
+    "exclusiveMaximum" => NUMBER_KEYWORDS,
+    "exclusiveMinimum" => NUMBER_KEYWORDS,
+    "multipleOf" => NUMBER_KEYWORDS,
+    "maxLength" => STRING_KEYWORDS,
+    "minLength" => STRING_KEYWORDS,
+    "pattern" => STRING_KEYWORDS,
+    "contentEncoding" => STRING_KEYWORDS,
+    "contentMediaType" => STRING_KEYWORDS,
+    "maxItems" => ARRAY_KEYWORDS,
+    "minItems" => ARRAY_KEYWORDS,
+    "uniqueItems" => ARRAY_KEYWORDS,
+    "items" => ARRAY_KEYWORDS,
+    "additionalItems" => ARRAY_KEYWORDS,
+    "contains" => ARRAY_KEYWORDS,
+    "maxProperties" => OBJECT_KEYWORDS,
+    "minProperties" => OBJECT_KEYWORDS,
+    "required" => OBJECT_KEYWORDS,
+    "properties" => OBJECT_KEYWORDS,
+    "patternProperties" => OBJECT_KEYWORDS,
+    "additionalProperties" => OBJECT_KEYWORDS,
+    "propertyNames" => OBJECT_KEYWORDS,
+    "dependencies" => OBJECT_KEYWORDS
+  }.freeze
+
   class ResolutionError < StandardError; end
 
   Error = Data.define(:keyword, :instance_path, :schema_path, :message) do
@@ -34,6 +81,10 @@ module JsonSchemaValidator
       @registry = {}
       @bases = {}
       @ref_bases = {}
+      @keyword_masks = {}
+      @resolved_refs = {}
+      @regexps = {}
+      @meta_schema_indexed = false
       @root_base = absolute_id(base_uri.to_s, schema.is_a?(Hash) ? schema["$id"] : nil)
       @root_base = base_uri.to_s if @root_base.empty? && base_uri
 
@@ -41,21 +92,25 @@ module JsonSchemaValidator
         index(external_schema, uri.to_s)
         @registry[strip_fragment(uri.to_s)] ||= external_schema
       end
-      meta_schema = JSON.parse(File.read(File.join(__dir__, "json_schema_validator", "draft7_schema.json")))
-      index(meta_schema, "http://json-schema.org/draft-07/schema#")
+      @registry[DRAFT7_META_SCHEMA_URI] = DRAFT7_META_SCHEMA
       index(schema, @root_base)
       @registry[strip_fragment(@root_base)] ||= schema unless @root_base.empty?
     end
 
     def validate(instance)
       @errors = []
+      @error_count = 0
       @active = {}
       evaluate(@root, instance, @root_base, "", "")
       Result.new(@errors)
     end
 
     def valid?(instance)
-      validate(instance).valid?
+      @errors = nil
+      @error_count = 0
+      @active = {}
+      evaluate(@root, instance, @root_base, nil, nil)
+      @error_count.zero?
     end
 
     private def evaluate(schema, instance, base, instance_path, schema_path)
@@ -64,27 +119,28 @@ module JsonSchemaValidator
       return true unless schema.is_a?(Hash)
 
       base = @bases.fetch(schema.object_id, base)
-      state = [schema.object_id, instance.object_id, base]
-      return true if @active[state]
-
-      @active[state] = true
-      before = @errors.length
+      before = @error_count
 
       if schema.key?("$ref")
+        state = [schema.object_id, instance.object_id]
+        return true if @active[state]
+
+        @active[state] = true
         target, target_base = resolve(schema["$ref"], @ref_bases.fetch(schema.object_id, base))
         evaluate(target, instance, target_base, instance_path, append(schema_path, "$ref"))
         return finish(state, before)
       end
 
-      check_type(schema, instance, instance_path, schema_path)
-      check_enum(schema, instance, instance_path, schema_path)
-      check_combiners(schema, instance, base, instance_path, schema_path)
-      check_number(schema, instance, instance_path, schema_path) if number?(instance)
-      check_string(schema, instance, instance_path, schema_path) if instance.is_a?(String)
-      check_array(schema, instance, base, instance_path, schema_path) if instance.is_a?(Array)
-      check_object(schema, instance, base, instance_path, schema_path) if instance.is_a?(Hash)
+      keywords = @keyword_masks.fetch(schema.object_id)
+      check_type(schema, instance, instance_path, schema_path) if (keywords & TYPE_KEYWORDS) != 0
+      check_enum(schema, instance, instance_path, schema_path) if (keywords & ENUM_KEYWORDS) != 0
+      check_combiners(schema, instance, base, instance_path, schema_path) if (keywords & COMBINER_KEYWORDS) != 0
+      check_number(schema, instance, instance_path, schema_path) if (keywords & NUMBER_KEYWORDS) != 0 && number?(instance)
+      check_string(schema, instance, instance_path, schema_path) if (keywords & STRING_KEYWORDS) != 0 && instance.is_a?(String)
+      check_array(schema, instance, base, instance_path, schema_path) if (keywords & ARRAY_KEYWORDS) != 0 && instance.is_a?(Array)
+      check_object(schema, instance, base, instance_path, schema_path) if (keywords & OBJECT_KEYWORDS) != 0 && instance.is_a?(Hash)
 
-      finish(state, before)
+      @error_count == before
     rescue ResolutionError => e
       add_error("$ref", instance_path, schema_path, e.message)
       finish(state, before)
@@ -92,7 +148,7 @@ module JsonSchemaValidator
 
     private def finish(state, before)
       @active.delete(state)
-      @errors.length == before
+      @error_count == before
     end
 
     private def check_type(schema, value, path, schema_path)
@@ -262,11 +318,14 @@ module JsonSchemaValidator
 
     private def trial(schema, value, base, path, schema_path)
       saved_errors = @errors
-      @errors = []
+      saved_error_count = @error_count
+      @errors = [] if saved_errors
+      @error_count = 0
       result = evaluate(schema, value, base, path, schema_path)
       result
     ensure
       @errors = saved_errors
+      @error_count = saved_error_count
     end
 
     private def limit(schema, keyword, actual, path, schema_path)
@@ -318,6 +377,8 @@ module JsonSchemaValidator
     # Ruby and ECMA-262 differ in their ASCII character classes, anchors, and
     # definition of whitespace. Draft 7 patterns use the ECMA behavior.
     private def ecma_regexp(pattern)
+      return @regexps[pattern] if @regexps.key?(pattern)
+
       whitespace = "\\u0009-\\u000D\\u0020\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF"
       translated = +""
       escaped = false
@@ -351,7 +412,7 @@ module JsonSchemaValidator
         end
       end
       translated << "\\" if escaped
-      Regexp.new(translated)
+      @regexps[pattern] = Regexp.new(translated)
     end
 
     private def check_content(schema, value, path, schema_path)
@@ -368,7 +429,8 @@ module JsonSchemaValidator
     end
 
     private def add_error(keyword, instance_path, schema_path, message)
-      @errors << Error.new(keyword: keyword, instance_path: instance_path, schema_path: schema_path, message: message)
+      @error_count += 1
+      @errors << Error.new(keyword: keyword, instance_path: instance_path, schema_path: schema_path, message: message) if @errors
       false
     end
 
@@ -381,6 +443,7 @@ module JsonSchemaValidator
       end
 
       @ref_bases[schema.object_id] = inherited_base
+      @keyword_masks[schema.object_id] = keyword_mask(schema)
       if schema.key?("$ref")
         @bases[schema.object_id] = inherited_base
         return
@@ -408,8 +471,15 @@ module JsonSchemaValidator
     end
 
     private def resolve(reference, base)
+      cache_key = [base, reference]
+      return @resolved_refs[cache_key] if @resolved_refs.key?(cache_key)
+
       uri = absolute_id(base, reference)
-      return [@registry[uri], @bases.fetch(@registry[uri].object_id, strip_fragment(uri))] if @registry.key?(uri)
+      if @registry.key?(uri)
+        target = @registry[uri]
+        index_meta_schema if target.equal?(DRAFT7_META_SCHEMA)
+        return @resolved_refs[cache_key] = [target, @bases.fetch(target.object_id, strip_fragment(uri))]
+      end
 
       document_uri = strip_fragment(uri)
       document = if document_uri.empty? || document_uri == strip_fragment(@root_base)
@@ -419,8 +489,10 @@ module JsonSchemaValidator
       end
       raise ResolutionError, "unresolvable reference #{reference.inspect}" unless document
 
+      index_meta_schema if document.equal?(DRAFT7_META_SCHEMA)
+
       target = pointer(document, fragment(uri))
-      [target, @bases.fetch(target.object_id, document_uri)]
+      @resolved_refs[cache_key] = [target, @bases.fetch(target.object_id, document_uri)]
     end
 
     private def pointer(document, raw_fragment)
@@ -464,7 +536,20 @@ module JsonSchemaValidator
     end
 
     private def append(path, segment)
+      return if path.nil?
+
       "#{path}/#{segment.to_s.gsub("~", "~0").gsub("/", "~1")}"
+    end
+
+    private def keyword_mask(schema)
+      schema.each_key.reduce(0) { |mask, keyword| mask | KEYWORD_MASKS.fetch(keyword, 0) }
+    end
+
+    private def index_meta_schema
+      return if @meta_schema_indexed
+
+      index(DRAFT7_META_SCHEMA, "#{DRAFT7_META_SCHEMA_URI}#")
+      @meta_schema_indexed = true
     end
   end
 
