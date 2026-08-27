@@ -15,7 +15,7 @@ RSpec.describe "JSON Schema Draft 7 official suite" do
   Dir[File.join(suite_root, "tests", "draft7", "*.json")].sort.each do |file|
     JSON.parse(File.read(file)).each do |group|
       group.fetch("tests").each do |test|
-        it "#{File.basename(file)}: #{group.fetch("description")} / #{test.fetch("description")}" do
+        it "#{File.basename(file)}: #{group.fetch("description")} / #{test.fetch("description")}", :aggregate_failures do
           result = JsonSchemaValidator.validate(group.fetch("schema"), test.fetch("data"), schemas: remotes)
           expect(result.valid?).to eq(test.fetch("valid")), -> { result.errors.map(&:to_h).inspect }
           expect(JsonSchemaValidator.valid?(group.fetch("schema"), test.fetch("data"), schemas: remotes)).to eq(test.fetch("valid"))
@@ -29,7 +29,7 @@ RSpec.describe "JSON Schema Draft 7 official suite" do
   optional_files.sort.each do |file|
     JSON.parse(File.read(file)).each do |group|
       group.fetch("tests").each do |test|
-        it "optional/#{File.basename(file)}: #{group.fetch("description")} / #{test.fetch("description")}" do
+        it "optional/#{File.basename(file)}: #{group.fetch("description")} / #{test.fetch("description")}", :aggregate_failures do
           result = JsonSchemaValidator.validate(group.fetch("schema"), test.fetch("data"), schemas: remotes, content: true)
           expect(result.valid?).to eq(test.fetch("valid")), -> { result.errors.map(&:to_h).inspect }
           expect(JsonSchemaValidator.valid?(group.fetch("schema"), test.fetch("data"), schemas: remotes, content: true)).to eq(test.fetch("valid"))
