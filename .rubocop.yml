@@ -6,6 +6,8 @@ plugins:
 
 AllCops:
   NewCops: enable
+  Exclude:
+    - 'references/**/*'
 
 Style/AccessModifierDeclarations:
   Enabled: true

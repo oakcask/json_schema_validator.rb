@@ -43,6 +43,12 @@ Run the test suite with:
 bundle exec rspec
 ```
 
+Run the linter with:
+
+```sh
+bundle exec rubocop
+```
+
 Run the benchmark against `json_schemer` and `json-schema`, using the official
 Draft 6 test suite, with:
 
