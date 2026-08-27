@@ -79,6 +79,7 @@ module JsonSchemaValidator
       @root = schema
       @validate_content = content
       @registry = {}
+      @unindexed_documents = {}
       @bases = {}
       @ref_bases = {}
       @keyword_masks = {}
@@ -89,8 +90,10 @@ module JsonSchemaValidator
       @root_base = base_uri.to_s if @root_base.empty? && base_uri
 
       schemas.each do |uri, external_schema|
-        index(external_schema, uri.to_s)
-        @registry[strip_fragment(uri.to_s)] ||= external_schema
+        external_uri = uri.to_s
+        document_uri = strip_fragment(external_uri)
+        @registry[document_uri] ||= external_schema
+        (@unindexed_documents[document_uri] ||= []) << [external_schema, external_uri]
       end
       @registry[DRAFT7_META_SCHEMA_URI] = DRAFT7_META_SCHEMA
       index(schema, @root_base)
@@ -475,13 +478,20 @@ module JsonSchemaValidator
       return @resolved_refs[cache_key] if @resolved_refs.key?(cache_key)
 
       uri = absolute_id(base, reference)
+      document_uri = strip_fragment(uri)
+      index_external(document_uri)
+      unless @registry.key?(uri)
+        @unindexed_documents.each_key do |unindexed_uri|
+          index_external(unindexed_uri)
+          break if @registry.key?(uri)
+        end
+      end
       if @registry.key?(uri)
         target = @registry[uri]
         index_meta_schema if target.equal?(DRAFT7_META_SCHEMA)
         return @resolved_refs[cache_key] = [target, @bases.fetch(target.object_id, strip_fragment(uri))]
       end
 
-      document_uri = strip_fragment(uri)
       document = if document_uri.empty? || document_uri == strip_fragment(@root_base)
         @root
       else
@@ -493,6 +503,11 @@ module JsonSchemaValidator
 
       target = pointer(document, fragment(uri))
       @resolved_refs[cache_key] = [target, @bases.fetch(target.object_id, document_uri)]
+    end
+
+    private def index_external(document_uri)
+      external_schemas = @unindexed_documents.delete(document_uri)
+      external_schemas&.each { |external| index(*external) }
     end
 
     private def pointer(document, raw_fragment)
