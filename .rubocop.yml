@@ -1,0 +1,16 @@
+inherit_gem:
+  standard: config/base.yml
+
+plugins:
+  - rubocop-rspec
+
+AllCops:
+  NewCops: enable
+
+Style/AccessModifierDeclarations:
+  Enabled: true
+  EnforcedStyle: inline
+
+RSpec/DescribeClass:
+  Exclude:
+    - spec/draft7_spec.rb

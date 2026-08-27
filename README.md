@@ -1,0 +1,51 @@
+# JSON Schema Validator
+
+A small, dependency-free JSON Schema Draft 7 validator for Ruby. It covers the
+required cases in the official Draft 7 test suite, as well as the optional tests
+for numeric precision, ECMA-262 regular expressions, and content validation. As
+specified by Draft 7, `format` is treated as an annotation by default.
+
+```ruby
+require "json_schema_validator"
+
+schema = {
+  "type" => "object",
+  "properties" => { "count" => { "type" => "integer", "minimum" => 0 } },
+  "required" => ["count"]
+}
+
+JsonSchemaValidator.valid?(schema, { "count" => 2 }) # => true
+
+result = JsonSchemaValidator.validate(schema, { "count" => -1 })
+result.valid? # => false
+result.errors.each do |error|
+  puts "#{error.instance_path}: #{error.message}"
+end
+```
+
+To resolve external references, pass a mapping of URIs to schemas using
+`schemas:`.
+
+```ruby
+JsonSchemaValidator.valid?(
+  { "$ref" => "https://example.test/positive" },
+  3,
+  schemas: { "https://example.test/positive" => { "type" => "integer", "minimum" => 1 } }
+)
+```
+
+Enable optional validation for `contentEncoding` and `contentMediaType` with
+`content: true`.
+
+Run the test suite with:
+
+```sh
+bundle exec rspec
+```
+
+Run the benchmark against `json_schemer` and `json-schema`, using the official
+Draft 6 test suite, with:
+
+```sh
+bundle exec ruby benchmark/draft6.rb
+```
