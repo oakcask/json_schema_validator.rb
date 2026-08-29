@@ -76,6 +76,7 @@ module JsonSchemaValidator
       def validate(instance)
         @errors = []
         @error_count = 0
+        @track_dynamic_scope = @graph.dynamic_scope?
         evaluate(@root, instance, "", "")
         Result.new(@errors)
       end
@@ -83,6 +84,7 @@ module JsonSchemaValidator
       def valid?(instance)
         @errors = nil
         @error_count = 0
+        @track_dynamic_scope = @graph.dynamic_scope?
         evaluate_valid(@root, instance)
       end
 
@@ -98,8 +100,10 @@ module JsonSchemaValidator
           return evaluate(node, instance, nil, nil).valid?
         end
 
-        entered_scope = @dynamic_scope.nil? || !@dynamic_scope.last.equal?(node.resource)
-        (@dynamic_scope ||= []) << node.resource if entered_scope
+        if @track_dynamic_scope
+          entered_scope = @dynamic_scope.nil? || !@dynamic_scope.last.equal?(node.resource)
+          (@dynamic_scope ||= []) << node.resource if entered_scope
+        end
 
         if schema.key?("$ref")
           return false unless valid_reference?(node, @graph.resolve(node, schema["$ref"]), instance)
@@ -365,8 +369,10 @@ module JsonSchemaValidator
         before = @error_count
         evaluation = Evaluation.valid
 
-        entered_scope = @dynamic_scope.nil? || !@dynamic_scope.last.equal?(node.resource)
-        (@dynamic_scope ||= []) << node.resource if entered_scope
+        if @track_dynamic_scope
+          entered_scope = @dynamic_scope.nil? || !@dynamic_scope.last.equal?(node.resource)
+          (@dynamic_scope ||= []) << node.resource if entered_scope
+        end
 
         if schema.key?("$ref")
           begin
