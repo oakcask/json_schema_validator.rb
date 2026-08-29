@@ -51,6 +51,11 @@ module JsonSchemaValidator
     "propertyNames" => OBJECT_KEYWORDS,
     "dependencies" => OBJECT_KEYWORDS
   }.freeze
+  SINGLE_SCHEMA_KEYWORDS = %w[
+    additionalItems additionalProperties contains propertyNames not if then else
+  ].freeze
+  ARRAY_SCHEMA_KEYWORDS = %w[allOf anyOf oneOf].freeze
+  HASH_SCHEMA_KEYWORDS = %w[definitions properties patternProperties].freeze
 
   class ResolutionError < StandardError; end
 
@@ -80,13 +85,14 @@ module JsonSchemaValidator
       @validate_content = content
       @registry = {}
       @external_schemas = schemas
-      @indexed_external_documents = {}
-      @indexed_external_schemas = {}
+      @indexed_external_documents = nil
+      @indexed_external_schemas = nil
       @bases = {}
       @ref_bases = {}
       @keyword_masks = {}
-      @resolved_refs = {}
-      @regexps = {}
+      @resolved_refs = nil
+      @regexps = nil
+      @active = nil
       @meta_schema_indexed = false
       @root_base = absolute_id(base_uri.to_s, schema.is_a?(Hash) ? schema["$id"] : nil)
       @root_base = base_uri.to_s if @root_base.empty? && base_uri
@@ -99,13 +105,13 @@ module JsonSchemaValidator
     def validate(instance)
       @errors = []
       @error_count = 0
-      @active = {}
+      (@active ||= {}).clear
       evaluate(@root, instance, @root_base, "", "")
       Result.new(@errors)
     end
 
     def valid?(instance)
-      @active = {}
+      (@active ||= {}).clear
       evaluate_valid(@root, instance, @root_base)
     end
 
@@ -574,7 +580,8 @@ module JsonSchemaValidator
     # Ruby and ECMA-262 differ in their ASCII character classes, anchors, and
     # definition of whitespace. Draft 7 patterns use the ECMA behavior.
     private def ecma_regexp(pattern)
-      return @regexps[pattern] if @regexps.key?(pattern)
+      regexps = (@regexps ||= {})
+      return regexps[pattern] if regexps.key?(pattern)
 
       whitespace = "\\u0009-\\u000D\\u0020\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF"
       translated = +""
@@ -609,7 +616,7 @@ module JsonSchemaValidator
         end
       end
       translated << "\\" if escaped
-      @regexps[pattern] = Regexp.new(translated)
+      regexps[pattern] = Regexp.new(translated)
     end
 
     private def check_content(schema, value, path, schema_path)
@@ -650,16 +657,16 @@ module JsonSchemaValidator
       @bases[schema.object_id] = base
       @registry[base] = schema if schema.key?("$id") && !base.empty?
       @registry[strip_fragment(base)] ||= schema if schema.key?("$id") && !base.empty? && fragment(base).empty?
-      %w[additionalItems additionalProperties contains propertyNames not if then else].each do |keyword|
+      SINGLE_SCHEMA_KEYWORDS.each do |keyword|
         index(schema[keyword], base) if schema.key?(keyword)
       end
       if schema.key?("items")
         index(schema["items"], base)
       end
-      %w[allOf anyOf oneOf].each do |keyword|
+      ARRAY_SCHEMA_KEYWORDS.each do |keyword|
         index(schema[keyword], base) if schema.key?(keyword)
       end
-      %w[definitions properties patternProperties].each do |keyword|
+      HASH_SCHEMA_KEYWORDS.each do |keyword|
         schema.fetch(keyword, {}).each_value { |child| index(child, base) }
       end
       schema.fetch("dependencies", {}).each_value do |child|
@@ -668,8 +675,9 @@ module JsonSchemaValidator
     end
 
     private def resolve(reference, base)
+      resolved_refs = (@resolved_refs ||= {})
       cache_key = [base, reference]
-      return @resolved_refs[cache_key] if @resolved_refs.key?(cache_key)
+      return resolved_refs[cache_key] if resolved_refs.key?(cache_key)
 
       uri = absolute_id(base, reference)
       document_uri = strip_fragment(uri)
@@ -683,7 +691,7 @@ module JsonSchemaValidator
       if @registry.key?(uri)
         target = @registry[uri]
         index_meta_schema if target.equal?(DRAFT7_META_SCHEMA)
-        return @resolved_refs[cache_key] = [target, @bases.fetch(target.object_id, strip_fragment(uri))]
+        return resolved_refs[cache_key] = [target, @bases.fetch(target.object_id, strip_fragment(uri))]
       end
 
       document = if document_uri.empty? || document_uri == strip_fragment(@root_base)
@@ -696,13 +704,14 @@ module JsonSchemaValidator
       index_meta_schema if document.equal?(DRAFT7_META_SCHEMA)
 
       target = pointer(document, fragment(uri))
-      @resolved_refs[cache_key] = [target, @bases.fetch(target.object_id, document_uri)]
+      resolved_refs[cache_key] = [target, @bases.fetch(target.object_id, document_uri)]
     end
 
     private def index_external(document_uri)
-      return if @indexed_external_documents[document_uri]
+      indexed_documents = (@indexed_external_documents ||= {})
+      return if indexed_documents[document_uri]
 
-      @indexed_external_documents[document_uri] = true
+      indexed_documents[document_uri] = true
       if @external_schemas.key?(document_uri)
         external_schema = @external_schemas[document_uri]
         index_external_schema(document_uri, external_schema)
@@ -718,9 +727,10 @@ module JsonSchemaValidator
     end
 
     private def index_external_schema(external_uri, external_schema)
-      return if @indexed_external_schemas[external_uri]
+      indexed_schemas = (@indexed_external_schemas ||= {})
+      return if indexed_schemas[external_uri]
 
-      @indexed_external_schemas[external_uri] = true
+      indexed_schemas[external_uri] = true
       @registry[strip_fragment(external_uri)] ||= external_schema
       index(external_schema, external_uri)
     end

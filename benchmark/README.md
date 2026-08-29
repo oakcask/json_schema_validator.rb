@@ -1,4 +1,4 @@
-# Performance baseline
+# Performance Benchmark
 
 `draft7.rb` measures this implementation against all 1,043 supported required
 and optional cases from the official Draft 7 suite. It verifies every expected
@@ -11,9 +11,21 @@ Run the current implementation with:
 bundle exec ruby benchmark/draft7.rb
 ```
 
+Measure allocated objects for the same build, end-to-end suite, and validation
+workloads with:
+
+```sh
+bundle exec ruby benchmark/allocations.rb
+```
+
+Set `BENCHMARK_ITERATIONS` to control the number of measured iterations. The
+default is 20. The script warms constructed validators before measuring and
+uses `GC.stat(:total_allocated_objects)`, so it requires no profiler gem.
+
 To reproduce the comparison, set `JSON_SCHEMA_VALIDATOR_LIB` to the `lib`
 directory of a checkout at the baseline revision and run the same command.
 
-`draft6.rb` has a different purpose: it compares this product with
-`json_schemer` and `json-schema` over the mutually supported Draft 6 subset. Its
-numbers are not used for the baseline improvement percentages above.
+## Product Comparison
+
+`draft6.rb` has a different purpose: it compares this product in speed, with
+`json_schemer` and `json-schema` over the mutually supported Draft 6 subset.
