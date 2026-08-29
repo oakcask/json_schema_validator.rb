@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "uri"
-require_relative "dialects/draft7"
+require_relative "dialects/draft2020_12"
 require_relative "schema_node"
 
 module JsonSchemaValidator
@@ -45,6 +45,7 @@ module JsonSchemaValidator
         @nodes = []
         @nodes_by_document_location = nil
         @resolved_refs = nil
+        @dynamic_anchors = {}
 
         root_dialect = dialect_for(schema, dialect)
         @root = compile_document(schema, base_uri.to_s, root_dialect)
@@ -56,6 +57,10 @@ module JsonSchemaValidator
         return resolved[reference] if resolved.key?(reference)
 
         resolved[reference] = resolve_uncached(node, reference)
+      end
+
+      def dynamic_anchor(resource, name)
+        @dynamic_anchors[[resource, name]]
       end
 
       private def resolve_uncached(node, reference)
@@ -150,6 +155,11 @@ module JsonSchemaValidator
         resource ||= register_resource(strip_fragment(base), node)
         resource.add(node) unless node.resource
 
+        if hash_schema && !exclusive_ref
+          register_anchor(node, resource, schema["$anchor"]) if schema.key?("$anchor")
+          register_anchor(node, resource, schema["$dynamicAnchor"], dynamic: true) if schema.key?("$dynamicAnchor")
+        end
+
         dialect.each_subschema(schema) do |child_schema, segments|
           child_schema_path = append_segments(schema_path, segments)
           child_resource_path = if resource_path == schema_path
@@ -177,6 +187,13 @@ module JsonSchemaValidator
         return resource if resource
 
         resources[uri] = Resource.new(uri, root)
+      end
+
+      private def register_anchor(node, resource, name, dynamic: false)
+        return unless name.is_a?(String) && !name.empty?
+
+        uri_registry["#{resource.uri}##{name}"] = node
+        @dynamic_anchors[[resource, name]] = node if dynamic
       end
 
       private def node_by_document_location(document_key, schema_path)
@@ -216,8 +233,44 @@ module JsonSchemaValidator
       private def dialect_for(schema, fallback)
         return fallback unless schema.is_a?(Hash) && schema.key?("$schema")
 
-        Dialect.resolve(schema["$schema"]) || fallback
+        uri = schema["$schema"].to_s
+        Dialect.resolve(uri) || custom_dialect(uri, fallback) || fallback
       end
+
+      private def custom_dialect(uri, fallback)
+        meta_schema = @external_schemas[uri] || @external_schemas[uri.delete_suffix("#")]
+        return unless meta_schema.is_a?(Hash) && meta_schema["$vocabulary"].is_a?(Hash)
+
+        custom_dialects = (@custom_dialects ||= {})
+        custom_dialects[uri] ||= begin
+          vocabulary = meta_schema["$vocabulary"]
+          validation = vocabulary.any? { |name, enabled| enabled && name.end_with?("/validation") }
+          format_assertion = vocabulary.any? { |name, _| name.end_with?("/format-assertion") }
+          keywords = if validation
+            fallback.keywords
+          else
+            fallback.keywords.except(*VALIDATION_KEYWORDS)
+          end
+          if format_assertion
+            keywords = keywords.merge("format" => Dialect::Keyword.new(mask: Dialect::STRING))
+          end
+          Dialect.new(
+            name: fallback.name,
+            uri: uri,
+            meta_schema: meta_schema,
+            keywords: keywords,
+            ref_siblings: fallback.ref_siblings?,
+            format_assertion: format_assertion
+          )
+        end
+      end
+
+      VALIDATION_KEYWORDS = %w[
+        type enum const multipleOf maximum exclusiveMaximum minimum exclusiveMinimum
+        maxLength minLength pattern maxItems minItems uniqueItems maxContains minContains
+        maxProperties minProperties required dependentRequired
+      ].freeze
+      private_constant :VALIDATION_KEYWORDS
 
       private def absolute_uri(base, identifier)
         base = base.to_s

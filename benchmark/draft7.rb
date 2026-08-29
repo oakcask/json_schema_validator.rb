@@ -17,7 +17,6 @@ end
 
 required_files = Dir[File.join(suite_root, "tests", "draft7", "*.json")]
 optional_files = Dir[File.join(suite_root, "tests", "draft7", "optional", "*.json")]
-optional_files.reject! { |file| File.basename(file) == "cross-draft.json" }
 
 groups = (required_files.sort + optional_files.sort).flat_map do |file|
   content = file.include?("/optional/")
