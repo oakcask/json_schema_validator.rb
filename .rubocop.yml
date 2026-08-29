@@ -8,6 +8,8 @@ AllCops:
   NewCops: enable
   Exclude:
     - 'references/**/*'
+    # setup-ruby extracts gems to vendor/bundle
+    - 'vendor/**/*'
 
 Style/AccessModifierDeclarations:
   Enabled: true

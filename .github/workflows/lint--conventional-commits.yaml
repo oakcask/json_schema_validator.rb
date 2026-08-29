@@ -1,0 +1,44 @@
+name: lint / conventional commits
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    outputs:
+      payload: ${{ steps.subjects.outputs.payload }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+      - name: Collect commit subjects
+        id: subjects
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          delimiter="commit_subjects_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          payload="$(
+            git log --format=%s "${PR_BASE_SHA}..${PR_HEAD_SHA}" \
+              | jq -R -s --arg label "commit subject" \
+                  '{label: $label, subjects: (split("\n") | map(select(length > 0)))}'
+          )"
+
+          {
+            printf 'payload<<%s\n' "${delimiter}"
+            printf '%s\n' "${payload}"
+            printf '%s\n' "${delimiter}"
+          } >> "${GITHUB_OUTPUT}"
+
+  validate:
+    needs: collect
+    uses: ./.github/workflows/shared--conventional-commits.yaml
+    with:
+      payload: ${{ needs.collect.outputs.payload }}

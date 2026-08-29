@@ -1,0 +1,19 @@
+name: lint / PR title
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    uses: ./.github/workflows/shared--conventional-commits.yaml
+    with:
+      payload: >-
+        {"label":"PR title","subjects":[${{ toJSON(github.event.pull_request.title) }}]}
