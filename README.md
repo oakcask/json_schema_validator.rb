@@ -1,6 +1,6 @@
 # JSON Schema Validator
 
-A small, dependency-free JSON Schema Draft 7 validator for Ruby. It covers the
+A small, light-weight-dependency JSON Schema Draft 7 validator for Ruby. It covers the
 required cases in the official Draft 7 test suite, as well as the optional tests
 for numeric precision, ECMA-262 regular expressions, and content validation. As
 specified by Draft 7, `format` is treated as an annotation by default.
