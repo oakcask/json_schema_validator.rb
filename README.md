@@ -26,6 +26,28 @@ result.errors.each do |error|
 end
 ```
 
+For repeated validation, compile the schema once and reuse the validator. A
+schema registry owns the compiled resource graph, so schemas compiled by the
+same registry also share their compiled external references.
+
+```ruby
+registry = JsonSchemaValidator::SchemaRegistry.new(
+  schemas: {
+    "https://example.test/positive" => { "type" => "integer", "minimum" => 1 }
+  }
+)
+schema = registry.compile("$ref" => "https://example.test/positive")
+validator = JsonSchemaValidator::Validator.new(schema)
+
+validator.valid?(1) # => true
+validator.valid?(0) # => false
+validator.validate(0).errors # detailed errors, without recompiling the schema
+```
+
+`JsonSchemaValidator.compile` is a convenience for compiling a standalone
+schema. `JsonSchemaValidator.validate` and `.valid?` continue to accept raw
+JSON-like schemas and perform compilation internally.
+
 To resolve external references, pass a mapping of URIs to schemas using
 `schemas:`.
 

@@ -37,8 +37,8 @@ module JsonSchemaValidator
 
       attr_reader :root, :resources, :uri_registry, :nodes
 
-      def initialize(schema, schemas: {}, base_uri: nil, dialect: Dialect.resolve)
-        @external_schemas = schemas
+      def initialize(schema = nil, schemas: {}, base_uri: nil, dialect: Dialect.resolve)
+        @external_schemas = schemas.dup
         @indexed_external_schemas = nil
         @resources = {}
         @uri_registry = {}
@@ -46,7 +46,12 @@ module JsonSchemaValidator
         @nodes_by_document_location = nil
         @resolved_refs = nil
         @dynamic_anchors = {}
+        @default_dialect = dialect
 
+        compile(schema, base_uri: base_uri, dialect: dialect) unless schema.nil?
+      end
+
+      def compile(schema, base_uri: nil, dialect: @default_dialect)
         root_dialect = dialect_for(schema, dialect)
         @root = compile_document(schema, base_uri.to_s, root_dialect)
       end
@@ -66,13 +71,17 @@ module JsonSchemaValidator
       private def resolve_uncached(node, reference)
         uri = absolute_uri(node.base_uri, reference)
         document_uri = strip_fragment(uri)
-        index_external(document_uri)
+        index_external(document_uri, node.dialect)
 
         if (target = uri_registry[uri])
           return target
         end
 
-        resource = resources[document_uri]
+        resource = if node.resource.uri == document_uri
+          node.resource
+        else
+          resources[document_uri]
+        end
         raise ResolutionError, "unresolvable reference #{reference.inspect}" unless resource
 
         raw_fragment = fragment(uri)
@@ -92,7 +101,7 @@ module JsonSchemaValidator
         end
 
         target = pointer_target(resource.root.schema, pointer)
-        compile(
+        compile_node(
           target,
           resource.root.base_uri,
           resource.root.dialect,
@@ -110,15 +119,16 @@ module JsonSchemaValidator
       end
 
       private def compile_document(schema, retrieval_uri, dialect)
-        root = compile(schema, retrieval_uri, dialect, "", "", nil, retrieval_uri)
+        document_key = retrieval_uri.empty? ? Object.new : retrieval_uri
+        root = compile_node(schema, retrieval_uri, dialect, "", "", nil, document_key)
         document_uri = strip_fragment(retrieval_uri)
-        register_resource(document_uri, root) unless resources.key?(document_uri)
+        register_resource(document_uri, root) unless document_uri.empty? || resources.key?(document_uri)
         uri_registry[retrieval_uri] ||= root unless retrieval_uri.empty?
         uri_registry[document_uri] ||= root unless document_uri.empty?
         root
       end
 
-      private def compile(schema, inherited_base, dialect, schema_path, resource_path, resource, document_key)
+      private def compile_node(schema, inherited_base, dialect, schema_path, resource_path, resource, document_key)
         hash_schema = schema.is_a?(Hash)
         dialect = dialect_for(schema, dialect) if hash_schema && schema.key?("$schema")
         exclusive_ref = hash_schema && schema.key?("$ref") && !dialect.ref_siblings?
@@ -167,7 +177,7 @@ module JsonSchemaValidator
           else
             append_segments(resource_path, segments)
           end
-          child = compile(
+          child = compile_node(
             child_schema,
             base,
             dialect,
@@ -182,6 +192,8 @@ module JsonSchemaValidator
       end
 
       private def register_resource(uri, root)
+        return Resource.new(uri, root) if uri.empty?
+
         resource = resources[uri]
         return resource if resource && resource.root.equal?(root)
         return resource if resource
@@ -203,7 +215,7 @@ module JsonSchemaValidator
         locations[[document_key, schema_path]]
       end
 
-      private def index_external(document_uri)
+      private def index_external(document_uri, fallback_dialect)
         indexed = (@indexed_external_schemas ||= {})
         return if indexed[document_uri]
 
@@ -214,7 +226,7 @@ module JsonSchemaValidator
         end
         if @external_schemas.key?(document_uri)
           external_schema = @external_schemas[document_uri]
-          dialect = dialect_for(external_schema, root.dialect)
+          dialect = dialect_for(external_schema, fallback_dialect)
           compile_document(external_schema, document_uri, dialect)
           return
         end
@@ -224,7 +236,7 @@ module JsonSchemaValidator
         end
         matches.each do |external_uri, external_schema|
           external_uri = external_uri.to_s
-          dialect = dialect_for(external_schema, root.dialect)
+          dialect = dialect_for(external_schema, fallback_dialect)
           external_root = compile_document(external_schema, external_uri, dialect)
           uri_registry[external_uri] ||= external_root
         end

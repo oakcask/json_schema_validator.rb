@@ -42,8 +42,7 @@ adapters = {
   "lib" => {
     build: lambda { |group|
       JsonSchemaValidator::Validator.new(
-        group.fetch(:schema),
-        schemas: remotes,
+        JsonSchemaValidator.compile(group.fetch(:schema), schemas: remotes),
         content: group.fetch(:content)
       )
     },
