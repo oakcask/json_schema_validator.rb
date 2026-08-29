@@ -10,6 +10,10 @@ module JsonSchemaValidator
     attr_reader :evaluated_properties, :evaluated_items
 
     def self.valid(evaluated_properties: EMPTY_LOCATIONS, evaluated_items: EMPTY_LOCATIONS)
+      if evaluated_properties.equal?(EMPTY_LOCATIONS) && evaluated_items.equal?(EMPTY_LOCATIONS)
+        return @valid ||= new(true, EMPTY_LOCATIONS, EMPTY_LOCATIONS)
+      end
+
       new(true, evaluated_properties, evaluated_items)
     end
 

@@ -48,7 +48,217 @@ module JsonSchemaValidator
       def valid?(instance)
         @errors = nil
         @error_count = 0
-        evaluate(@root, instance, nil, nil).valid?
+        evaluate_valid(@root, instance)
+      end
+
+      private def evaluate_valid(node, instance)
+        schema = node.schema
+        return schema if schema == true || schema == false
+        return true unless schema.is_a?(Hash)
+
+        if schema.key?("$ref")
+          instances = active_instances(node)
+          instance_id = instance.object_id
+          unless instances[instance_id]
+            instances[instance_id] = true
+            begin
+              return false unless evaluate_valid(@graph.resolve(node, schema["$ref"]), instance)
+            rescue ResolutionError
+              return false
+            ensure
+              instances.delete(instance_id)
+            end
+          end
+          return true unless node.dialect.ref_siblings?
+        end
+
+        keywords = node.keyword_mask
+        categories = Internal::Dialect
+        return false if (keywords & categories::TYPE) != 0 && !valid_type?(schema, instance)
+        return false if (keywords & categories::ENUM) != 0 && !valid_enum?(schema, instance)
+        return false if (keywords & categories::COMBINER) != 0 && !valid_combiners?(node, instance)
+
+        case instance
+        when Hash
+          (keywords & categories::OBJECT) == 0 || valid_object?(node, instance)
+        when Array
+          (keywords & categories::ARRAY) == 0 || valid_array?(node, instance)
+        when String
+          (keywords & categories::STRING) == 0 || valid_string?(schema, instance)
+        when Numeric
+          instance.is_a?(Complex) || (keywords & categories::NUMBER) == 0 || valid_number?(schema, instance)
+        else
+          true
+        end
+      end
+
+      private def valid_type?(schema, value)
+        types = schema["type"]
+        return types.any? { |type| type?(value, type) } if types.is_a?(Array)
+
+        type?(value, types)
+      end
+
+      private def valid_enum?(schema, value)
+        return false if schema.key?("enum") && !schema["enum"].any? { |candidate| json_equal?(candidate, value) }
+        return false if schema.key?("const") && !json_equal?(schema["const"], value)
+
+        true
+      end
+
+      private def valid_combiners?(node, value)
+        schema = node.schema
+        if schema.key?("allOf")
+          schema["allOf"].each_index do |index|
+            return false unless evaluate_valid(node.child("allOf", index), value)
+          end
+        end
+        if schema.key?("anyOf")
+          matched = schema["anyOf"].each_index.any? do |index|
+            evaluate_valid(node.child("anyOf", index), value)
+          end
+          return false unless matched
+        end
+        if schema.key?("oneOf")
+          matches = 0
+          schema["oneOf"].each_index do |index|
+            matches += 1 if evaluate_valid(node.child("oneOf", index), value)
+            return false if matches > 1
+          end
+          return false unless matches == 1
+        end
+        return false if schema.key?("not") && evaluate_valid(node.child("not"), value)
+
+        if schema.key?("if")
+          branch = evaluate_valid(node.child("if"), value) ? "then" : "else"
+          return false if schema.key?(branch) && !evaluate_valid(node.child(branch), value)
+        end
+        true
+      end
+
+      private def valid_number?(schema, value)
+        actual = nil
+        if schema.key?("maximum")
+          actual ||= decimal(value)
+          return false unless actual <= decimal(schema["maximum"])
+        end
+        if schema.key?("minimum")
+          actual ||= decimal(value)
+          return false unless actual >= decimal(schema["minimum"])
+        end
+        if schema.key?("exclusiveMaximum")
+          actual ||= decimal(value)
+          return false unless actual < decimal(schema["exclusiveMaximum"])
+        end
+        if schema.key?("exclusiveMinimum")
+          actual ||= decimal(value)
+          return false unless actual > decimal(schema["exclusiveMinimum"])
+        end
+        if schema.key?("multipleOf")
+          divisor = decimal(schema["multipleOf"])
+          return false unless divisor.positive?
+          return false unless (actual || decimal(value)).remainder(divisor).zero?
+        end
+        true
+      end
+
+      private def valid_string?(schema, value)
+        length = value.length
+        return false if schema.key?("maxLength") && length > schema["maxLength"]
+        return false if schema.key?("minLength") && length < schema["minLength"]
+        return false if schema.key?("pattern") && !ecma_regexp(schema["pattern"]).match?(value)
+        return valid_content?(schema, value) if @validate_content
+
+        true
+      rescue RegexpError
+        false
+      end
+
+      private def valid_content?(schema, value)
+        decoded = (schema["contentEncoding"] == "base64") ? Base64.strict_decode64(value) : value
+        JSON.parse(decoded) if schema["contentMediaType"] == "application/json"
+        true
+      rescue ArgumentError, JSON::ParserError
+        false
+      end
+
+      private def valid_array?(node, value)
+        schema = node.schema
+        length = value.length
+        return false if schema.key?("maxItems") && length > schema["maxItems"]
+        return false if schema.key?("minItems") && length < schema["minItems"]
+        if schema["uniqueItems"]
+          value.each_with_index do |item, index|
+            return false if value[0...index].any? { |previous| json_equal?(previous, item) }
+          end
+        end
+
+        items = schema["items"]
+        if items.is_a?(Array)
+          items.each_index do |index|
+            break if index >= length
+            return false unless evaluate_valid(node.child("items", index), value[index])
+          end
+          if length > items.length && schema.key?("additionalItems")
+            additional = node.child("additionalItems")
+            (items.length...length).each do |index|
+              return false unless evaluate_valid(additional, value[index])
+            end
+          end
+        elsif !items.nil?
+          child = node.child("items")
+          value.each { |item| return false unless evaluate_valid(child, item) }
+        end
+
+        if schema.key?("contains")
+          child = node.child("contains")
+          return false unless value.any? { |item| evaluate_valid(child, item) }
+        end
+        true
+      end
+
+      private def valid_object?(node, value)
+        schema = node.schema
+        length = value.length
+        return false if schema.key?("maxProperties") && length > schema["maxProperties"]
+        return false if schema.key?("minProperties") && length < schema["minProperties"]
+        return false if schema.key?("required") && !schema["required"].all? { |name| value.key?(name) }
+
+        properties = schema["properties"]
+        patterns = schema["patternProperties"]
+        additional = node.child("additionalProperties") if schema.key?("additionalProperties")
+        value.each do |name, property_value|
+          matched = false
+          if properties&.key?(name)
+            matched = true
+            return false unless evaluate_valid(node.child("properties", name), property_value)
+          end
+          if patterns
+            patterns.each_key do |pattern|
+              next unless ecma_regexp(pattern).match?(name)
+              matched = true
+              return false unless evaluate_valid(node.child("patternProperties", pattern), property_value)
+            end
+          end
+          return false if !matched && additional && !evaluate_valid(additional, property_value)
+        end
+
+        if schema.key?("propertyNames")
+          child = node.child("propertyNames")
+          value.each_key { |name| return false unless evaluate_valid(child, name) }
+        end
+
+        if schema.key?("dependencies")
+          schema["dependencies"].each do |name, dependency|
+            next unless value.key?(name)
+            if dependency.is_a?(Array)
+              return false unless dependency.all? { |required_name| value.key?(required_name) }
+            else
+              return false unless evaluate_valid(node.child("dependencies", name), value)
+            end
+          end
+        end
+        true
       end
 
       private def evaluate(node, instance, instance_path, schema_path)
@@ -128,20 +338,20 @@ module JsonSchemaValidator
         schema = node.schema
         if schema.key?("allOf")
           schema["allOf"].each_index do |index|
-            evaluate(node.child(["allOf", index]), value, path, append(append(schema_path, "allOf"), index))
+            evaluate(node.child("allOf", index), value, path, append(append(schema_path, "allOf"), index))
           end
         end
 
         if schema.key?("anyOf")
           matches = schema["anyOf"].each_index.count do |index|
-            trial(node.child(["anyOf", index]), value, path, append(append(schema_path, "anyOf"), index)).valid?
+            trial(node.child("anyOf", index), value, path, append(append(schema_path, "anyOf"), index)).valid?
           end
           add_error("anyOf", path, append(schema_path, "anyOf"), "no subschema matched") if matches.zero?
         end
 
         if schema.key?("oneOf")
           matches = schema["oneOf"].each_index.count do |index|
-            trial(node.child(["oneOf", index]), value, path, append(append(schema_path, "oneOf"), index)).valid?
+            trial(node.child("oneOf", index), value, path, append(append(schema_path, "oneOf"), index)).valid?
           end
           add_error("oneOf", path, append(schema_path, "oneOf"), "expected exactly one match, got #{matches}") unless matches == 1
         end
@@ -207,7 +417,7 @@ module JsonSchemaValidator
         if items.is_a?(Array)
           items.each_index do |index|
             break if index >= value.length
-            evaluate(node.child(["items", index]), value[index], append(path, index), append(append(schema_path, "items"), index))
+            evaluate(node.child("items", index), value[index], append(path, index), append(append(schema_path, "items"), index))
           end
           if value.length > items.length && schema.key?("additionalItems")
             additional = node.child("additionalItems")
@@ -244,12 +454,12 @@ module JsonSchemaValidator
           matched = false
           if properties.key?(name)
             matched = true
-            evaluate(node.child(["properties", name]), property_value, append(path, name), append(append(schema_path, "properties"), name))
+            evaluate(node.child("properties", name), property_value, append(path, name), append(append(schema_path, "properties"), name))
           end
           patterns.each do |pattern, subschema|
             next unless ecma_regexp(pattern).match?(name)
             matched = true
-            evaluate(node.child(["patternProperties", pattern]), property_value, append(path, name), append(append(schema_path, "patternProperties"), pattern))
+            evaluate(node.child("patternProperties", pattern), property_value, append(path, name), append(append(schema_path, "patternProperties"), pattern))
           end
           if !matched && schema.key?("additionalProperties")
             evaluate(node.child("additionalProperties"), property_value, append(path, name), append(schema_path, "additionalProperties"))
@@ -269,7 +479,7 @@ module JsonSchemaValidator
               add_error("dependencies", path, append(schema_path, "dependencies"), "property #{required_name.inspect} is required by #{name.inspect}") unless value.key?(required_name)
             end
           else
-            evaluate(node.child(["dependencies", name]), value, path, append(append(schema_path, "dependencies"), name))
+            evaluate(node.child("dependencies", name), value, path, append(append(schema_path, "dependencies"), name))
           end
         end
       end

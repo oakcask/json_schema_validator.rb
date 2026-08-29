@@ -65,10 +65,10 @@ module JsonSchemaValidator
         return unless schema.is_a?(Hash)
         return if schema.key?("$ref") && !ref_siblings?
 
-        keywords.each do |keyword, specification|
-          next unless schema.key?(keyword)
+        schema.each do |keyword, value|
+          specification = keywords[keyword]
+          next unless specification&.subschema_shape
 
-          value = schema[keyword]
           case specification.subschema_shape
           when :single
             yield value, [keyword] if schema?(value)
