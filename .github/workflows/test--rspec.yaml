@@ -1,0 +1,35 @@
+name: test / rspec
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/test--rspec.yaml
+      - .gitmodules
+      - Gemfile.lock
+      - lib/**/*
+      - spec/**/*
+  pull_request:
+    paths:
+      - .github/workflows/test--rspec.yaml
+      - .gitmodules
+      - Gemfile.lock
+      - lib/**/*
+      - spec/**/*
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          bundler-cache: true
+          cache-version: $${ hashFiles('Gemfile.lock') }}
+      - name: Run Ruby tests
+        run: bundle exec rspec

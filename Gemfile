@@ -1,6 +1,6 @@
 source "https://rubygems.org"
 git_source(:github) { |repo_name| "https://github.com/#{repo_name}" }
-
+ruby file: ".ruby-version"
 gem "benchmark-ips", require: false
 gem "json-schema", path: "references/json-schema", require: false
 gem "json_schemer", path: "references/json_schemer", require: false

@@ -143,5 +143,8 @@ CHECKSUMS
   standard-performance (1.9.0) sha256=49483d31be448292951d80e5e67cdcb576c2502103c7b40aec6f1b6e9c88e3f2
   unicode-display_width (2.6.0) sha256=12279874bba6d5e4d2728cef814b19197dbb10d7a7837a869bab65da943b7f5a
 
+RUBY VERSION
+  ruby 4.0.6
+
 BUNDLED WITH
   4.0.16
