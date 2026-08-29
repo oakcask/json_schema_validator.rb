@@ -68,6 +68,14 @@ case in the official Draft 7 suite with:
 bundle exec ruby benchmark/draft7.rb
 ```
 
+Compare against `json_schemer` over every supported required and optional case
+in the official Draft 2019-09 and Draft 2020-12 suites with:
+
+```sh
+bundle exec ruby benchmark/draft2019_09.rb
+bundle exec ruby benchmark/draft2020_12.rb
+```
+
 Set `JSON_SCHEMA_VALIDATOR_LIB` to benchmark another checkout's `lib` directory
 under the same suite and dependency environment. `BENCHMARK_TIME` and
 `BENCHMARK_WARMUP` control the measurement and warmup durations.

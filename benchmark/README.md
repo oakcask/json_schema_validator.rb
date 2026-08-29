@@ -29,3 +29,13 @@ directory of a checkout at the baseline revision and run the same command.
 
 `draft6.rb` has a different purpose: it compares this product in speed, with
 `json_schemer` and `json-schema` over the mutually supported Draft 6 subset.
+
+`draft2019_09.rb` and `draft2020_12.rb` compare this product with `json_schemer`
+over all supported required and optional cases for their respective dialects.
+Both scripts verify every expected result before measuring build, end-to-end
+suite, and validation performance.
+
+```sh
+bundle exec ruby benchmark/draft2019_09.rb
+bundle exec ruby benchmark/draft2020_12.rb
+```
