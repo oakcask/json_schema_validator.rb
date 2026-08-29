@@ -1,7 +1,12 @@
 # frozen_string_literal: true
 
 require "uri"
+require_relative "dialects/draft7"
+require_relative "dialects/draft2019_09"
 require_relative "dialects/draft2020_12"
+require_relative "meta_schemas/draft7"
+require_relative "meta_schemas/draft2019_09"
+require_relative "meta_schemas/draft2020_12"
 require_relative "schema_node"
 
 module JsonSchemaValidator
@@ -230,8 +235,8 @@ module JsonSchemaValidator
         return if indexed[document_uri]
 
         indexed[document_uri] = true
-        if (dialect = Dialect.resolve(document_uri))
-          compile_document(dialect.meta_schema, dialect.uri, dialect)
+        if (dialect = Dialect.resolve(document_uri)) && (meta_schema = MetaSchemas.resolve(document_uri))
+          compile_document(meta_schema, dialect.uri, dialect)
           return
         end
         if @external_schemas.key?(document_uri)
@@ -279,7 +284,6 @@ module JsonSchemaValidator
           Dialect.new(
             name: fallback.name,
             uri: uri,
-            meta_schema: meta_schema,
             keywords: keywords,
             ref_siblings: fallback.ref_siblings?,
             format_assertion: format_assertion

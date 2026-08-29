@@ -60,7 +60,6 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
       dialect_class.new(
         name: :ref_siblings,
         uri: dialect_uri,
-        meta_schema: true,
         keywords: draft7.keywords,
         ref_siblings: true
       )
