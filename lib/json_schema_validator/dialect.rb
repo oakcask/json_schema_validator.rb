@@ -41,17 +41,34 @@ module JsonSchemaValidator
 
       attr_reader :name, :uri, :meta_schema, :keywords
 
-      def initialize(name:, uri:, meta_schema:, keywords:, ref_siblings:)
+      def initialize(name:, uri:, meta_schema:, keywords:, ref_siblings:, format_assertion: false)
         @name = name
         @uri = uri
         @meta_schema = meta_schema
         @keywords = keywords.freeze
         @ref_siblings = ref_siblings
+        @format_assertion = format_assertion
         freeze
       end
 
       def ref_siblings?
         @ref_siblings
+      end
+
+      def format_assertion?
+        @format_assertion
+      end
+
+      def draft7?
+        name == :draft7
+      end
+
+      def draft2019?
+        name == :draft2019_09
+      end
+
+      def draft2020?
+        name == :draft2020_12
       end
 
       def keyword_mask(schema)

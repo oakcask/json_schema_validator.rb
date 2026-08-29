@@ -18,3 +18,10 @@ Style/AccessModifierDeclarations:
 RSpec/DescribeClass:
   Exclude:
     - spec/draft7_spec.rb
+    - spec/draft2019_09_spec.rb
+    - spec/draft2020_12_spec.rb
+
+RSpec/LeakyLocalVariable:
+  Exclude:
+    - spec/draft2019_09_spec.rb
+    - spec/draft2020_12_spec.rb

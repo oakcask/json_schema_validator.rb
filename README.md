@@ -1,14 +1,17 @@
 # JSON Schema Validator
 
-A small, light-weight-dependency JSON Schema Draft 7 validator for Ruby. It covers the
-required cases in the official Draft 7 test suite, as well as the optional tests
-for numeric precision, ECMA-262 regular expressions, and content validation. As
-specified by Draft 7, `format` is treated as an annotation by default.
+A small, light-weight-dependency JSON Schema validator for Ruby supporting Draft 7,
+Draft 2019-09, and Draft 2020-12. It covers the required cases in the official
+JSON-Schema-Test-Suite, as well as the applicable optional tests for numeric
+precision, ECMA-262 regular expressions, content validation, anchors, and dynamic
+references. The dialect is selected from the schema's `$schema` URI; schemas that
+omit `$schema` use Draft 7 for compatibility.
 
 ```ruby
 require "json_schema_validator"
 
 schema = {
+  "$schema" => "https://json-schema.org/draft/2020-12/schema",
   "type" => "object",
   "properties" => { "count" => { "type" => "integer", "minimum" => 0 } },
   "required" => ["count"]
@@ -34,8 +37,10 @@ JsonSchemaValidator.valid?(
 )
 ```
 
-Enable optional validation for `contentEncoding` and `contentMediaType` with
-`content: true`.
+Draft 2019-09 and Draft 2020-12 support their dialect-specific keywords, including
+`$recursiveRef` / `$dynamicRef`, `$defs`, `dependentSchemas`, `dependentRequired`,
+`minContains`, `maxContains`, and the `unevaluated*` applicators. Enable optional
+validation for `contentEncoding` and `contentMediaType` with `content: true`.
 
 Run the test suite with:
 
