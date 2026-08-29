@@ -105,13 +105,11 @@ module JsonSchemaValidator
     def validate(instance)
       @errors = []
       @error_count = 0
-      (@active ||= {}).clear
       evaluate(@root, instance, @root_base, "", "")
       Result.new(@errors)
     end
 
     def valid?(instance)
-      (@active ||= {}).clear
       evaluate_valid(@root, instance, @root_base)
     end
 
@@ -121,17 +119,18 @@ module JsonSchemaValidator
 
       base = @bases.fetch(schema.object_id, base)
       if schema.key?("$ref")
-        state = [schema.object_id, instance.object_id]
-        return true if @active[state]
+        instances = active_instances(schema)
+        instance_id = instance.object_id
+        return true if instances[instance_id]
 
-        @active[state] = true
+        instances[instance_id] = true
         return begin
           target, target_base = resolve(schema["$ref"], @ref_bases.fetch(schema.object_id, base))
           evaluate_valid(target, instance, target_base)
         rescue ResolutionError
           false
         ensure
-          @active.delete(state)
+          instances.delete(instance_id)
         end
       end
 
@@ -318,13 +317,20 @@ module JsonSchemaValidator
       before = @error_count
 
       if schema.key?("$ref")
-        state = [schema.object_id, instance.object_id]
-        return true if @active[state]
+        instances = active_instances(schema)
+        instance_id = instance.object_id
+        return true if instances[instance_id]
 
-        @active[state] = true
-        target, target_base = resolve(schema["$ref"], @ref_bases.fetch(schema.object_id, base))
-        evaluate(target, instance, target_base, instance_path, append(schema_path, "$ref"))
-        return finish(state, before)
+        instances[instance_id] = true
+        begin
+          target, target_base = resolve(schema["$ref"], @ref_bases.fetch(schema.object_id, base))
+          evaluate(target, instance, target_base, instance_path, append(schema_path, "$ref"))
+        rescue ResolutionError => e
+          add_error("$ref", instance_path, schema_path, e.message)
+        ensure
+          instances.delete(instance_id)
+        end
+        return @error_count == before
       end
 
       keywords = @keyword_masks.fetch(schema.object_id)
@@ -344,14 +350,11 @@ module JsonSchemaValidator
       end
 
       @error_count == before
-    rescue ResolutionError => e
-      add_error("$ref", instance_path, schema_path, e.message)
-      finish(state, before)
     end
 
-    private def finish(state, before)
-      @active.delete(state)
-      @error_count == before
+    private def active_instances(schema)
+      active = (@active ||= {})
+      active[schema.object_id] ||= {}
     end
 
     private def check_type(schema, value, path, schema_path)
@@ -574,6 +577,8 @@ module JsonSchemaValidator
     end
 
     private def decimal(value)
+      return value if value.is_a?(Integer) || value.is_a?(Rational)
+
       Rational(value.to_s)
     end
 
@@ -790,7 +795,9 @@ module JsonSchemaValidator
     end
 
     private def keyword_mask(schema)
-      schema.each_key.reduce(0) { |mask, keyword| mask | KEYWORD_MASKS.fetch(keyword, 0) }
+      mask = 0
+      schema.each_key { |keyword| mask |= KEYWORD_MASKS.fetch(keyword, 0) }
+      mask
     end
 
     private def index_meta_schema
