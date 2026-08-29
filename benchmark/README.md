@@ -1,6 +1,6 @@
 # Performance Benchmark
 
-`draft7.rb` measures this implementation against all 1,043 supported required
+`draft7.rb` measures this implementation against all 1,045 supported required
 and optional cases from the official Draft 7 suite. It verifies every expected
 result before measuring validator construction, end-to-end suite execution, and
 validation with constructed validators.

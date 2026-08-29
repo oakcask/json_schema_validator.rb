@@ -25,7 +25,6 @@ RSpec.describe "JSON Schema Draft 2019-09 official suite" do
   end
 
   optional_files = Dir[File.join(suite_root, "tests", "draft2019-09", "optional", "*.json")]
-  optional_files.reject! { |file| File.basename(file) == "cross-draft.json" }
   optional_files.sort.each do |file|
     JSON.parse(File.read(file)).each do |group|
       group.fetch("tests").each do |test|
