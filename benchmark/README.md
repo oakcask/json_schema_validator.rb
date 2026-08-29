@@ -30,6 +30,12 @@ directory of a checkout at the baseline revision and run the same command.
 `draft6.rb` has a different purpose: it compares this product in speed, with
 `json_schemer` and `json-schema` over the mutually supported Draft 6 subset.
 
+Run it against the official Draft 6 test suite with:
+
+```sh
+bundle exec ruby benchmark/draft6.rb
+```
+
 `draft2019_09.rb` and `draft2020_12.rb` compare this product with `json_schemer`
 over all supported required and optional cases for their respective dialects.
 Both scripts verify every expected result before measuring build, end-to-end
@@ -40,6 +46,17 @@ bundle exec ruby benchmark/draft2019_09.rb
 bundle exec ruby benchmark/draft2020_12.rb
 ```
 
+`repeated_validation.rb` compares repeated validation throughput against
+`json_schemer` after compiling one Draft 2020-12 schema once:
+
+```sh
+bundle exec ruby benchmark/repeated_validation.rb
+```
+
+`BENCHMARK_DOCUMENTS` controls the number of valid and invalid documents cycled
+through the compiled validators. Schema compilation is outside the measured
+section.
+
 Set `BENCHMARK_ONLY` to `build`, `suite`, or `validate` to run one workload.
 This is useful for longer, lower-variance measurements:
 
@@ -47,6 +64,9 @@ This is useful for longer, lower-variance measurements:
 BENCHMARK_ONLY=suite BENCHMARK_TIME=15 BENCHMARK_WARMUP=3 \
   bundle exec ruby benchmark/draft2020_12.rb
 ```
+
+`BENCHMARK_TIME` and `BENCHMARK_WARMUP` control the measurement and warmup
+durations for the benchmark scripts that use time-based measurement.
 
 To compare another checkout, point `JSON_SCHEMA_VALIDATOR_LIB` at its `lib`
 directory while running the same script and settings:
