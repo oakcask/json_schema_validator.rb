@@ -3,6 +3,10 @@
 require_relative "spec_helper"
 
 RSpec.describe JsonSchemaValidator do
+  it "keeps implementation constants private" do
+    expect(described_class.constants(false)).to contain_exactly(:Error, :ResolutionError, :Result, :Validator)
+  end
+
   it "offers boolean and detailed validation APIs", :aggregate_failures do
     schema = {"type" => "integer", "minimum" => 2}
 
