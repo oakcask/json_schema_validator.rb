@@ -1,4 +1,10 @@
 PATH
+  remote: .
+  specs:
+    json_schema_validator (0.1.0)
+      base64
+
+PATH
   remote: references/json-schema
   specs:
     json-schema (6.2.0)
@@ -99,6 +105,7 @@ PLATFORMS
 DEPENDENCIES
   benchmark-ips
   json-schema!
+  json_schema_validator!
   json_schemer!
   rspec
   rubocop-rspec
@@ -115,6 +122,7 @@ CHECKSUMS
   hana (1.3.7) sha256=5425db42d651fea08859811c29d20446f16af196308162894db208cac5ce9b0d
   json (2.18.0) sha256=b10506aee4183f5cf49e0efc48073d7b75843ce3782c68dbeb763351c08fd505
   json-schema (6.2.0)
+  json_schema_validator (0.1.0)
   json_schemer (2.5.0)
   language_server-protocol (3.17.0.3) sha256=3d5c58c02f44a20d972957a9febe386d7e7468ab3900ce6bd2b563dd910c6b3f
   lint_roller (1.1.0) sha256=2c0c845b632a7d172cb849cc90c1bce937a28c5c8ccccb50dfd46a485003cc87
