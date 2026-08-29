@@ -98,6 +98,17 @@ bundle exec ruby benchmark/draft2019_09.rb
 bundle exec ruby benchmark/draft2020_12.rb
 ```
 
+Compare repeated validation throughput against `json_schemer` after compiling
+one Draft 2020-12 schema once with:
+
+```sh
+bundle exec ruby benchmark/repeated_validation.rb
+```
+
+`BENCHMARK_DOCUMENTS` controls the number of valid and invalid documents cycled
+through the compiled validators. Schema compilation is outside the measured
+section.
+
 Set `JSON_SCHEMA_VALIDATOR_LIB` to benchmark another checkout's `lib` directory
 under the same suite and dependency environment. `BENCHMARK_TIME` and
 `BENCHMARK_WARMUP` control the measurement and warmup durations.
