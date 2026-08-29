@@ -39,12 +39,11 @@ module JsonSchemaValidator
         end
       end
 
-      attr_reader :name, :uri, :meta_schema, :keywords
+      attr_reader :name, :uri, :keywords
 
-      def initialize(name:, uri:, meta_schema:, keywords:, ref_siblings:, format_assertion: false)
+      def initialize(name:, uri:, keywords:, ref_siblings:, format_assertion: false)
         @name = name
         @uri = uri
-        @meta_schema = meta_schema
         @keywords = keywords.freeze
         @ref_siblings = ref_siblings
         @format_assertion = format_assertion
