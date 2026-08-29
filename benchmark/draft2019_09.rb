@@ -93,27 +93,34 @@ puts "#{groups.length} schemas, #{cases} validation cases"
 
 time = Float(ENV.fetch("BENCHMARK_TIME", "5"))
 warmup = Float(ENV.fetch("BENCHMARK_WARMUP", "2"))
+only = ENV["BENCHMARK_ONLY"]
 
-Benchmark.ips do |benchmark|
-  benchmark.config(time: time, warmup: warmup)
-  adapters.each do |name, adapter|
-    benchmark.report("#{name} build") { build(groups, adapter) }
+if only.nil? || only == "build"
+  Benchmark.ips do |benchmark|
+    benchmark.config(time: time, warmup: warmup)
+    adapters.each do |name, adapter|
+      benchmark.report("#{name} build") { build(groups, adapter) }
+    end
+    benchmark.compare!
   end
-  benchmark.compare!
 end
 
-Benchmark.ips do |benchmark|
-  benchmark.config(time: time, warmup: warmup)
-  adapters.each do |name, adapter|
-    benchmark.report("#{name} suite") { validate_all(build(groups, adapter), adapter) }
+if only.nil? || only == "suite"
+  Benchmark.ips do |benchmark|
+    benchmark.config(time: time, warmup: warmup)
+    adapters.each do |name, adapter|
+      benchmark.report("#{name} suite") { validate_all(build(groups, adapter), adapter) }
+    end
+    benchmark.compare!
   end
-  benchmark.compare!
 end
 
-Benchmark.ips do |benchmark|
-  benchmark.config(time: time, warmup: warmup)
-  adapters.each do |name, adapter|
-    benchmark.report("#{name} validate") { validate_all(compiled.fetch(name), adapter) }
+if only.nil? || only == "validate"
+  Benchmark.ips do |benchmark|
+    benchmark.config(time: time, warmup: warmup)
+    adapters.each do |name, adapter|
+      benchmark.report("#{name} validate") { validate_all(compiled.fetch(name), adapter) }
+    end
+    benchmark.compare!
   end
-  benchmark.compare!
 end

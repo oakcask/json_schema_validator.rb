@@ -39,3 +39,20 @@ suite, and validation performance.
 bundle exec ruby benchmark/draft2019_09.rb
 bundle exec ruby benchmark/draft2020_12.rb
 ```
+
+Set `BENCHMARK_ONLY` to `build`, `suite`, or `validate` to run one workload.
+This is useful for longer, lower-variance measurements:
+
+```sh
+BENCHMARK_ONLY=suite BENCHMARK_TIME=15 BENCHMARK_WARMUP=3 \
+  bundle exec ruby benchmark/draft2020_12.rb
+```
+
+To compare another checkout, point `JSON_SCHEMA_VALIDATOR_LIB` at its `lib`
+directory while running the same script and settings:
+
+```sh
+JSON_SCHEMA_VALIDATOR_LIB=../baseline/lib BENCHMARK_ONLY=suite \
+  BENCHMARK_TIME=15 BENCHMARK_WARMUP=3 \
+  bundle exec ruby benchmark/draft2020_12.rb
+```

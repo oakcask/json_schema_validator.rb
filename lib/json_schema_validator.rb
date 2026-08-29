@@ -49,7 +49,7 @@ module JsonSchemaValidator
       def valid?(instance)
         @errors = nil
         @error_count = 0
-        evaluate(@root, instance, nil, nil).valid?
+        evaluate_valid(@root, instance)
       end
 
       private def evaluate_valid(node, instance)
@@ -57,20 +57,27 @@ module JsonSchemaValidator
         return schema if schema == true || schema == false
         return true unless schema.is_a?(Hash)
 
+        # These applicators depend on annotations collected from sibling
+        # applicators. Keep them on the full evaluation path; schemas without
+        # them can avoid allocating Evaluation objects and JSON Pointer paths.
+        if schema.key?("unevaluatedProperties") || schema.key?("unevaluatedItems")
+          return evaluate(node, instance, nil, nil).valid?
+        end
+
+        entered_scope = @dynamic_scope.nil? || !@dynamic_scope.last.equal?(node.resource)
+        (@dynamic_scope ||= []) << node.resource if entered_scope
+
         if schema.key?("$ref")
-          instances = active_instances(node)
-          instance_id = instance.object_id
-          unless instances[instance_id]
-            instances[instance_id] = true
-            begin
-              return false unless evaluate_valid(@graph.resolve(node, schema["$ref"]), instance)
-            rescue ResolutionError
-              return false
-            ensure
-              instances.delete(instance_id)
-            end
-          end
+          return false unless valid_reference?(node, @graph.resolve(node, schema["$ref"]), instance)
           return true unless node.dialect.ref_siblings?
+        end
+
+        if schema.key?("$recursiveRef")
+          return false unless valid_reference?(node, recursive_target(node, schema["$recursiveRef"]), instance)
+        end
+
+        if schema.key?("$dynamicRef")
+          return false unless valid_reference?(node, dynamic_target(node, schema["$dynamicRef"]), instance)
         end
 
         keywords = node.keyword_mask
@@ -85,12 +92,28 @@ module JsonSchemaValidator
         when Array
           (keywords & categories::ARRAY) == 0 || valid_array?(node, instance)
         when String
-          (keywords & categories::STRING) == 0 || valid_string?(schema, instance)
+          (keywords & categories::STRING) == 0 || valid_string?(node, instance)
         when Numeric
           instance.is_a?(Complex) || (keywords & categories::NUMBER) == 0 || valid_number?(schema, instance)
         else
           true
         end
+      rescue ResolutionError
+        false
+      ensure
+        @dynamic_scope.pop if entered_scope
+      end
+
+      private def valid_reference?(source, target, instance)
+        instances = active_instances(source)
+        instance_id = instance.object_id
+        return true if instances[instance_id]
+
+        instances[instance_id] = true
+        activated = true
+        evaluate_valid(target, instance)
+      ensure
+        instances&.delete(instance_id) if activated
       end
 
       private def valid_type?(schema, value)
@@ -163,15 +186,19 @@ module JsonSchemaValidator
         true
       end
 
-      private def valid_string?(schema, value)
+      private def valid_string?(node, value)
+        schema = node.schema
         length = value.length
         return false if schema.key?("maxLength") && length > schema["maxLength"]
         return false if schema.key?("minLength") && length < schema["minLength"]
         return false if schema.key?("pattern") && !ecma_regexp(schema["pattern"]).match?(value)
+        if node.dialect.format_assertion? && schema["format"] == "ipv4"
+          return false unless IPAddr.new(value).ipv4?
+        end
         return valid_content?(schema, value) if @validate_content
 
         true
-      rescue RegexpError
+      rescue RegexpError, IPAddr::InvalidAddressError
         false
       end
 
@@ -194,6 +221,14 @@ module JsonSchemaValidator
           end
         end
 
+        prefix_items = schema["prefixItems"]
+        if prefix_items.is_a?(Array)
+          prefix_items.each_index do |index|
+            break if index >= length
+            return false unless evaluate_valid(node.child("prefixItems", index), value[index])
+          end
+        end
+
         items = schema["items"]
         if items.is_a?(Array)
           items.each_index do |index|
@@ -208,12 +243,21 @@ module JsonSchemaValidator
           end
         elsif !items.nil?
           child = node.child("items")
-          value.each { |item| return false unless evaluate_valid(child, item) }
+          start = prefix_items.is_a?(Array) ? prefix_items.length : 0
+          (start...length).each do |index|
+            return false unless evaluate_valid(child, value[index])
+          end
         end
 
         if schema.key?("contains")
           child = node.child("contains")
-          return false unless value.any? { |item| evaluate_valid(child, item) }
+          if node.dialect.keywords.key?("minContains")
+            matches = value.count { |item| evaluate_valid(child, item) }
+            return false if matches < schema.fetch("minContains", 1)
+            return false if schema.key?("maxContains") && matches > schema["maxContains"]
+          else
+            return false unless value.any? { |item| evaluate_valid(child, item) }
+          end
         end
         true
       end
@@ -259,6 +303,19 @@ module JsonSchemaValidator
             end
           end
         end
+        if schema.key?("dependentRequired")
+          schema["dependentRequired"].each do |name, required_names|
+            next unless value.key?(name)
+            return false unless required_names.all? { |required_name| value.key?(required_name) }
+          end
+        end
+
+        if schema.key?("dependentSchemas")
+          schema["dependentSchemas"].each_key do |name|
+            next unless value.key?(name)
+            return false unless evaluate_valid(node.child("dependentSchemas", name), value)
+          end
+        end
         true
       end
 
@@ -271,11 +328,6 @@ module JsonSchemaValidator
         end
         return Evaluation.valid unless schema.is_a?(Hash)
 
-        evaluation_key = [node.object_id, instance.object_id]
-        evaluating = (@evaluating ||= {})
-        return Evaluation.valid if evaluating[evaluation_key]
-        evaluating[evaluation_key] = true
-
         before = @error_count
         evaluation = Evaluation.valid
 
@@ -285,7 +337,9 @@ module JsonSchemaValidator
         if schema.key?("$ref")
           begin
             target = @graph.resolve(node, schema["$ref"])
-            evaluation = evaluation.merge(evaluate(target, instance, instance_path, append(schema_path, "$ref")))
+            evaluation = evaluation.merge(
+              evaluate_reference(node, target, instance, instance_path, schema_path, "$ref")
+            )
           rescue ResolutionError => e
             add_error("$ref", instance_path, schema_path, e.message)
           end
@@ -328,14 +382,21 @@ module JsonSchemaValidator
         (@error_count == before) ? evaluation : Evaluation.invalid
       ensure
         @dynamic_scope.pop if entered_scope
-        evaluating&.delete(evaluation_key)
       end
 
       private def evaluate_reference(node, target, instance, instance_path, schema_path, keyword)
+        instances = active_instances(node)
+        instance_id = instance.object_id
+        return Evaluation.valid if instances[instance_id]
+
+        instances[instance_id] = true
+        activated = true
         evaluate(target, instance, instance_path, append(schema_path, keyword))
       rescue ResolutionError => e
         add_error(keyword, instance_path, schema_path, e.message)
         Evaluation.invalid
+      ensure
+        instances&.delete(instance_id) if activated
       end
 
       private def recursive_target(node, reference)
