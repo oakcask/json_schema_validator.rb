@@ -4,7 +4,8 @@ require_relative "spec_helper"
 
 RSpec.describe JsonSchemaValidator do
   it "keeps implementation constants private" do
-    expect(described_class.constants(false)).to contain_exactly(:Error, :ResolutionError, :Result, :Validator)
+    expected = %i[CompiledSchema Error ResolutionError Result SchemaRegistry Validator]
+    expect(described_class.constants(false)).to match_array(expected)
   end
 
   it "offers boolean and detailed validation APIs", :aggregate_failures do
@@ -22,6 +23,27 @@ RSpec.describe JsonSchemaValidator do
 
     expect(described_class.valid?(schema, 1, schemas: schemas)).to be(true)
     expect(described_class.valid?(schema, "1", schemas: schemas)).to be(false)
+  end
+
+  it "validates repeatedly with a compiled schema", :aggregate_failures do
+    compiled = described_class.compile("type" => "integer")
+    validator = described_class::Validator.new(compiled)
+
+    expect(validator.valid?(1)).to be(true)
+    expect(validator.valid?("1")).to be(false)
+    expect(validator.validate("1")).not_to be_valid
+  end
+
+  it "requires Validator schemas to be compiled" do
+    expect { described_class::Validator.new("type" => "integer") }
+      .to raise_error(ArgumentError, /SchemaRegistry#compile/)
+  end
+
+  it "shares registered schemas between compiled schemas" do
+    registry = described_class::SchemaRegistry.new(schemas: {"urn:integer" => {"type" => "integer"}})
+    validators = 2.times.map { described_class::Validator.new(registry.compile("$ref" => "urn:integer")) }
+    results = [validators.first.valid?(1), validators.last.valid?("1")]
+    expect(results).to eq([true, false])
   end
 
   it "keeps format as an annotation by default" do

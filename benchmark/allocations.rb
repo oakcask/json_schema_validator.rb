@@ -29,11 +29,11 @@ groups = (required_files.sort + optional_files.sort).flat_map do |file|
 end
 
 def build(groups, remotes)
+  registry = JsonSchemaValidator::SchemaRegistry.new(schemas: remotes)
   groups.map do |group|
     group.merge(
       validator: JsonSchemaValidator::Validator.new(
-        group.fetch(:schema),
-        schemas: remotes,
+        registry.compile(group.fetch(:schema)),
         content: group.fetch(:content)
       )
     )

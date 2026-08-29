@@ -26,6 +26,28 @@ result.errors.each do |error|
 end
 ```
 
+For repeated validation, compile the schema once and reuse the validator. A
+schema registry owns the compiled resource graph, so schemas compiled by the
+same registry also share their compiled external references.
+
+```ruby
+registry = JsonSchemaValidator::SchemaRegistry.new(
+  schemas: {
+    "https://example.test/positive" => { "type" => "integer", "minimum" => 1 }
+  }
+)
+schema = registry.compile("$ref" => "https://example.test/positive")
+validator = JsonSchemaValidator::Validator.new(schema)
+
+validator.valid?(1) # => true
+validator.valid?(0) # => false
+validator.validate(0).errors # detailed errors, without recompiling the schema
+```
+
+`JsonSchemaValidator.compile` is a convenience for compiling a standalone
+schema. `JsonSchemaValidator.validate` and `.valid?` continue to accept raw
+JSON-like schemas and perform compilation internally.
+
 To resolve external references, pass a mapping of URIs to schemas using
 `schemas:`.
 
@@ -75,6 +97,17 @@ in the official Draft 2019-09 and Draft 2020-12 suites with:
 bundle exec ruby benchmark/draft2019_09.rb
 bundle exec ruby benchmark/draft2020_12.rb
 ```
+
+Compare repeated validation throughput against `json_schemer` after compiling
+one Draft 2020-12 schema once with:
+
+```sh
+bundle exec ruby benchmark/repeated_validation.rb
+```
+
+`BENCHMARK_DOCUMENTS` controls the number of valid and invalid documents cycled
+through the compiled validators. Schema compilation is outside the measured
+section.
 
 Set `JSON_SCHEMA_VALIDATOR_LIB` to benchmark another checkout's `lib` directory
 under the same suite and dependency environment. `BENCHMARK_TIME` and

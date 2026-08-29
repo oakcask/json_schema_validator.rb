@@ -158,6 +158,29 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
         expect([one.schema["const"], two.schema["const"]]).to eq([1, 2])
       end
     end
+
+    context "when the graph compiles multiple root schemas" do
+      let(:reference) { "https://example.test/shared" }
+      let(:graph) do
+        graph_class.new(schemas: {reference => {"type" => "integer"}})
+      end
+
+      it "reuses the compiled external resource" do
+        first_root = graph.compile({"$ref" => reference})
+        first_target = graph.resolve(first_root, reference)
+        second_root = graph.compile({"$ref" => reference})
+
+        expect(graph.resolve(second_root, reference)).to equal(first_target)
+      end
+
+      it "keeps anonymous documents and their local references separate" do
+        first = graph.compile({"$ref" => "#/$defs/value", "$defs" => {"value" => {"const" => 1}}})
+        second = graph.compile({"$ref" => "#/$defs/value", "$defs" => {"value" => {"const" => 2}}})
+
+        constants = [first, second].map { |root| graph.resolve(root, root.schema["$ref"]).schema["const"] }
+        expect(constants).to eq([1, 2])
+      end
+    end
   end
 
   describe "unknown keywords" do
