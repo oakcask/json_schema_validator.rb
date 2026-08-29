@@ -57,6 +57,20 @@ module JsonSchemaValidator
   ARRAY_SCHEMA_KEYWORDS = %w[allOf anyOf oneOf].freeze
   HASH_SCHEMA_KEYWORDS = %w[definitions properties patternProperties].freeze
 
+  private_constant :DRAFT7_META_SCHEMA_URI,
+    :DRAFT7_META_SCHEMA,
+    :TYPE_KEYWORDS,
+    :ENUM_KEYWORDS,
+    :COMBINER_KEYWORDS,
+    :NUMBER_KEYWORDS,
+    :STRING_KEYWORDS,
+    :ARRAY_KEYWORDS,
+    :OBJECT_KEYWORDS,
+    :KEYWORD_MASKS,
+    :SINGLE_SCHEMA_KEYWORDS,
+    :ARRAY_SCHEMA_KEYWORDS,
+    :HASH_SCHEMA_KEYWORDS
+
   class ResolutionError < StandardError; end
 
   Error = Data.define(:keyword, :instance_path, :schema_path, :message) do
