@@ -19,8 +19,10 @@ on:
       - spec/**/*
 
 permissions:
-  actions: read
   contents: read
+
+env:
+  BUNDLE_ONLY: default test
 
 jobs:
   test:

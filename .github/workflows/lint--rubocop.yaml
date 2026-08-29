@@ -19,6 +19,9 @@ on:
 permissions:
   contents: read
 
+env:
+  BUNDLE_ONLY: lint
+
 jobs:
   rubocop:
     runs-on: ubuntu-latest
