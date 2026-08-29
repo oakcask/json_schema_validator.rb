@@ -27,6 +27,6 @@ jobs:
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
         with:
           bundler-cache: true
-          cache-version: $${ hashFiles('Gemfile.lock') }}
+          cache-version: ${{ hashFiles('Gemfile.lock') }}
       - name: Run Ruby tests
         run: bundle exec rubocop
