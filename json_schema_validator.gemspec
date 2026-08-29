@@ -9,6 +9,7 @@ Gem::Specification.new do |spec|
   spec.summary = "A small, light-weight-dependency JSON Schema Draft 7 validator"
   spec.description = "Validates Ruby values against JSON Schema Draft 7 schemas."
   spec.homepage = "https://github.com/oakcask/json_schema_validator.rb"
+  spec.license = "MIT"
   spec.required_ruby_version = ">= 3.2"
 
   spec.metadata = {
@@ -16,7 +17,7 @@ Gem::Specification.new do |spec|
     "source_code_uri" => "#{spec.homepage}/tree/main",
     "rubygems_mfa_required" => "true"
   }
-  spec.files = Dir["lib/**/*", "README.md"]
+  spec.files = Dir["lib/**/*", "README.md", "LICENSE"]
   spec.require_paths = ["lib"]
 
   spec.add_dependency "base64"
