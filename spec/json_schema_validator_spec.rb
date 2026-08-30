@@ -4,8 +4,16 @@ require_relative "spec_helper"
 
 RSpec.describe JsonSchemaValidator do
   it "keeps implementation constants private" do
-    expected = %i[CompiledSchema Error ResolutionError Result SchemaRegistry Validator]
+    expected = %i[
+      CompiledSchema Error ResolutionError Result SchemaRegistry UnsupportedFormatError ValidationError Validator
+    ]
     expect(described_class.constants(false)).to match_array(expected)
+  end
+
+  it "exposes validator exceptions under one base error" do
+    expect(described_class::Error.superclass).to equal(StandardError)
+    expect(described_class::ResolutionError.superclass).to equal(described_class::Error)
+    expect(described_class::UnsupportedFormatError.superclass).to equal(described_class::Error)
   end
 
   it "offers boolean and detailed validation APIs", :aggregate_failures do
@@ -14,6 +22,7 @@ RSpec.describe JsonSchemaValidator do
     expect(described_class.valid?(schema, 3)).to be(true)
     result = described_class.validate(schema, 1)
     expect(result).not_to be_valid
+    expect(result.errors.first).to be_a(described_class::ValidationError)
     expect(result.errors.first.to_h).to include(keyword: "minimum", instance_path: "")
   end
 
@@ -77,5 +86,28 @@ RSpec.describe JsonSchemaValidator do
 
   it "ignores unknown formats in best-effort assertion mode" do
     expect(described_class.valid?({"format" => "unknown"}, "anything", format: true)).to be(true)
+  end
+
+  it "rejects unknown formats while compiling a Format-Assertion schema", :aggregate_failures do
+    [true, false].each do |required|
+      meta_schema_uri = "https://example.test/format-assertion/#{required}"
+      meta_schema = {
+        "$schema" => "https://json-schema.org/draft/2020-12/schema",
+        "$id" => meta_schema_uri,
+        "$vocabulary" => {
+          "https://json-schema.org/draft/2020-12/vocab/core" => true,
+          "https://json-schema.org/draft/2020-12/vocab/format-assertion" => required
+        }
+      }
+      schemas = {meta_schema_uri => meta_schema}
+
+      expect(described_class.valid?({"$schema" => meta_schema_uri, "format" => "date"}, "2020-02-29", schemas: schemas)).to be(true)
+      expect do
+        described_class.compile({"$schema" => meta_schema_uri, "format" => "unknown"}, schemas: schemas)
+      end.to raise_error(
+        JsonSchemaValidator::UnsupportedFormatError,
+        /unsupported format "unknown" required by Format-Assertion vocabulary/
+      )
+    end
   end
 end

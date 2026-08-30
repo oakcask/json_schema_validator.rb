@@ -88,8 +88,9 @@ and dynamic references.
 [^format]: Pass `format: true` to assert the supported `date`, `time`,
     `date-time`, `duration`, `ipv4`, `json-pointer`, `relative-json-pointer`,
     and `uuid` formats. A custom Draft 2020-12 meta-schema that declares the
-    Format-Assertion vocabulary can also assert them without the option. Other
-    formats remain annotations.
+    Format-Assertion vocabulary can also assert them without the option and
+    rejects unsupported formats during schema compilation. Other formats remain
+    annotations in the caller-enabled best-effort mode.
 
 Run the test suite with:
 
