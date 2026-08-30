@@ -36,4 +36,20 @@ RSpec.describe "JSON Schema Draft 2020-12 official suite" do
       end
     end
   end
+
+  enabled_formats = []
+  format_files = Dir[File.join(suite_root, "tests", "draft2020-12", "optional", "format", "*.json")]
+  format_files.sort.each do |file|
+    format = File.basename(file, ".json")
+    example = enabled_formats.include?(format) ? method(:it) : method(:xit)
+    JSON.parse(File.read(file)).each do |group|
+      group.fetch("tests").each do |test|
+        example.call "optional/format/#{File.basename(file)}: #{group.fetch("description")} / #{test.fetch("description")}", :aggregate_failures do
+          result = JsonSchemaValidator.validate(group.fetch("schema"), test.fetch("data"), schemas: remotes, format: true)
+          expect(result.valid?).to eq(test.fetch("valid")), -> { result.errors.map(&:to_h).inspect }
+          expect(JsonSchemaValidator.valid?(group.fetch("schema"), test.fetch("data"), schemas: remotes, format: true)).to eq(test.fetch("valid"))
+        end
+      end
+    end
+  end
 end
