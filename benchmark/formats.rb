@@ -19,6 +19,12 @@ suite = File.join(
   "format"
 )
 formats = %w[date date-time time]
+selected_format = ENV["BENCHMARK_FORMAT"]
+if selected_format
+  raise "BENCHMARK_FORMAT must be date, date-time, or time" unless formats.include?(selected_format)
+
+  formats = [selected_format]
+end
 groups = formats.flat_map do |format|
   file = File.join(suite, "#{format}.json")
   JSON.parse(File.read(file)).map do |group|

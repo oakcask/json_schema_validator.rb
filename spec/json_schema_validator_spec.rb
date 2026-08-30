@@ -66,6 +66,15 @@ RSpec.describe JsonSchemaValidator do
     expect(validator.valid?("1963-06-19 08:30:06Z")).to be(false)
   end
 
+  it "resolves the format when compiling a reusable validator", :aggregate_failures do
+    schema = {"format" => "date"}
+    validator = described_class::Validator.new(described_class.compile(schema), format: true)
+    schema["format"] = "unknown"
+
+    expect(validator.valid?("2020-02-29")).to be(true)
+    expect(validator.valid?("2021-02-29")).to be(false)
+  end
+
   it "ignores unknown formats in best-effort assertion mode" do
     expect(described_class.valid?({"format" => "unknown"}, "anything", format: true)).to be(true)
   end

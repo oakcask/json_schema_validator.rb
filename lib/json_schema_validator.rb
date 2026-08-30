@@ -120,6 +120,10 @@ module JsonSchemaValidator
         end
 
         keywords = node.keyword_mask
+        if keywords.zero? && format_asserted?(node)
+          return !instance.is_a?(String) || Formats.valid_kind?(node.format_kind, instance)
+        end
+
         categories = Internal::Dialect
         return false if (keywords & categories::TYPE) != 0 && !valid_type?(schema, instance)
         return false if (keywords & categories::ENUM) != 0 && !valid_enum?(schema, instance)
@@ -131,7 +135,13 @@ module JsonSchemaValidator
         when Array
           (keywords & categories::ARRAY) == 0 || valid_array?(node, instance)
         when String
-          ((keywords & categories::STRING) == 0 && !format_asserted?(node)) || valid_string?(node, instance)
+          if (keywords & categories::STRING) != 0
+            valid_string?(node, instance)
+          elsif format_asserted?(node)
+            Formats.valid_kind?(node.format_kind, instance)
+          else
+            true
+          end
         when Numeric
           instance.is_a?(Complex) || (keywords & categories::NUMBER) == 0 || valid_number?(schema, instance)
         else
@@ -231,8 +241,8 @@ module JsonSchemaValidator
         return false if schema.key?("maxLength") && length > schema["maxLength"]
         return false if schema.key?("minLength") && length < schema["minLength"]
         return false if schema.key?("pattern") && !ecma_regexp(schema["pattern"]).match?(value)
-        if format_asserted?(node) && schema.key?("format")
-          return false unless Formats.valid?(schema["format"], value)
+        if format_asserted?(node)
+          return false unless Formats.valid_kind?(node.format_kind, value)
         end
         return valid_content?(schema, value) if @validate_content
 
@@ -565,9 +575,8 @@ module JsonSchemaValidator
           matched = ecma_regexp(schema["pattern"]).match?(value)
           add_error("pattern", path, append(schema_path, "pattern"), "string does not match pattern") unless matched
         end
-        if format_asserted?(node) && schema.key?("format")
-          format = schema["format"]
-          add_error("format", path, append(schema_path, "format"), "string is not a valid #{format}") unless Formats.valid?(format, value)
+        if format_asserted?(node)
+          add_error("format", path, append(schema_path, "format"), "string is not a valid #{node.format_name}") unless Formats.valid_kind?(node.format_kind, value)
         end
         check_content(schema, value, path, schema_path) if @validate_content
       rescue RegexpError
@@ -575,7 +584,7 @@ module JsonSchemaValidator
       end
 
       private def format_asserted?(node)
-        (@validate_format || node.dialect.format_assertion?) && node.schema.key?("format")
+        (@validate_format || node.dialect.format_assertion?) && !node.format_kind.nil?
       end
 
       private def check_array(node, value, path, schema_path, prior_evaluation)

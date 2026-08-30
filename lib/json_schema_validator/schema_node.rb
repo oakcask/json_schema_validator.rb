@@ -1,12 +1,14 @@
 # frozen_string_literal: true
 
+require_relative "formats"
+
 module JsonSchemaValidator
   module Internal
     class SchemaNode
       MISSING_SEGMENT = Object.new.freeze
 
       attr_reader :schema, :dialect, :base_uri, :schema_path, :resource_path,
-        :keyword_mask, :document_key
+        :keyword_mask, :document_key, :format_kind, :format_name
       attr_accessor :resource
 
       def initialize(schema:, dialect:, base_uri:, schema_path:, resource_path:, document_key:)
@@ -17,6 +19,10 @@ module JsonSchemaValidator
         @resource_path = resource_path
         @document_key = document_key
         @keyword_mask = schema.is_a?(Hash) ? dialect.keyword_mask(schema) : 0
+        if schema.is_a?(Hash) && schema.key?("format")
+          @format_name = schema["format"].dup.freeze
+          @format_kind = Formats.resolve(@format_name)
+        end
         @children = nil
       end
 

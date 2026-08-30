@@ -56,6 +56,13 @@ correctly, and reports any excluded product differences before measuring.
 bundle exec ruby benchmark/formats.rb
 ```
 
+Set `BENCHMARK_FORMAT` to `date`, `time`, or `date-time` to measure one format
+while retaining the same correctness checks and workloads.
+
+```sh
+BENCHMARK_FORMAT=date bundle exec ruby benchmark/formats.rb
+```
+
 `repeated_validation.rb` compares repeated validation throughput against
 `json_schemer` after compiling one Draft 2020-12 schema once:
 
