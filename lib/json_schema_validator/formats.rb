@@ -143,6 +143,37 @@ module JsonSchemaValidator
         private def leap_year?(year)
           (year % 4).zero? && (!(year % 100).zero? || (year % 400).zero?)
         end
+
+        private def valid_ipv4_at?(value, index)
+          length = value.bytesize
+
+          4.times do |octet|
+            byte = value.getbyte(index)
+            return false unless byte&.between?(48, 57)
+            return false if byte == 48 && value.getbyte(index + 1)&.between?(48, 57)
+
+            number = 0
+            digits = 0
+            while (byte = value.getbyte(index))&.between?(48, 57)
+              number = (number * 10) + byte - 48
+              digits += 1
+              return false if digits > 3
+
+              index += 1
+            end
+            return false if number > 255
+
+            if octet == 3
+              return false unless index == length
+            else
+              return false unless value.getbyte(index) == 46
+
+              index += 1
+            end
+          end
+
+          true
+        end
       end
 
       class DateFormat < Format
@@ -224,35 +255,67 @@ module JsonSchemaValidator
         def initialize = super("ipv4")
 
         def call(value)
-          index = 0
+          valid_ipv4_at?(value, 0)
+        end
+      end
+
+      class Ipv6Format < Format
+        def initialize = super("ipv6")
+
+        def call(value)
           length = value.bytesize
+          return false if length.zero?
 
-          4.times do |octet|
-            byte = value.getbyte(index)
-            return false unless byte&.between?(48, 57)
-            return false if byte == 48 && value.getbyte(index + 1)&.between?(48, 57)
+          index = 0
+          groups = 0
+          compressed = false
 
-            number = 0
-            digits = 0
-            while (byte = value.getbyte(index))&.between?(48, 57)
-              number = (number * 10) + byte - 48
-              digits += 1
-              return false if digits > 3
+          if value.getbyte(index) == 58 # :
+            return false unless value.getbyte(index + 1) == 58
+
+            compressed = true
+            index += 2
+            return true if index == length
+          end
+
+          while index < length
+            group_start = index
+            hex_digits = 0
+            while (byte = value.getbyte(index)) &&
+                (byte.between?(48, 57) || byte.between?(65, 70) || byte.between?(97, 102))
+              hex_digits += 1
+              return false if hex_digits > 4
 
               index += 1
             end
-            return false if number > 255
+            return false if hex_digits.zero?
 
-            if octet == 3
-              return false unless index == length
-            else
-              return false unless value.getbyte(index) == 46
+            if value.getbyte(index) == 46 # .
+              return false unless groups <= 6 && valid_ipv4_at?(value, group_start)
 
+              groups += 2
+              index = length
+              break
+            end
+
+            groups += 1
+            return false if groups > 8
+            break if index == length
+            return false unless value.getbyte(index) == 58 # :
+
+            index += 1
+            if value.getbyte(index) == 58 # :
+              return false if compressed
+
+              compressed = true
               index += 1
+              break if index == length
+            elsif index == length
+              return false
             end
           end
 
-          true
+          compressed ? groups < 8 : groups == 8
         end
       end
 
@@ -308,6 +371,7 @@ module JsonSchemaValidator
       DATE_TIME = DateTimeFormat.new
       DURATION = DurationFormat.new
       IPV4 = Ipv4Format.new
+      IPV6 = Ipv6Format.new
       JSON_POINTER = JsonPointerFormat.new
       RELATIVE_JSON_POINTER = RelativeJsonPointerFormat.new
       UUID = UuidFormat.new
@@ -320,6 +384,7 @@ module JsonSchemaValidator
           when "date-time" then DATE_TIME
           when "duration" then DURATION
           when "ipv4" then IPV4
+          when "ipv6" then IPV6
           when "json-pointer" then JSON_POINTER
           when "relative-json-pointer" then RELATIVE_JSON_POINTER
           when "uuid" then UUID
@@ -329,8 +394,8 @@ module JsonSchemaValidator
       end
 
       private_constant :Format, :DateFormat, :TimeFormat, :DateTimeFormat, :DurationFormat,
-        :Ipv4Format, :JsonPointerFormat, :RelativeJsonPointerFormat, :UuidFormat, :UNKNOWN,
-        :DATE, :TIME, :DATE_TIME, :DURATION, :IPV4, :JSON_POINTER, :RELATIVE_JSON_POINTER, :UUID
+        :Ipv4Format, :Ipv6Format, :JsonPointerFormat, :RelativeJsonPointerFormat, :UuidFormat, :UNKNOWN,
+        :DATE, :TIME, :DATE_TIME, :DURATION, :IPV4, :IPV6, :JSON_POINTER, :RELATIVE_JSON_POINTER, :UUID
     end
   end
 

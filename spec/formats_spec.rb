@@ -211,11 +211,37 @@ RSpec.describe "JsonSchemaValidator::Internal::Formats" do
     end
   end
 
+  describe "ipv6" do
+    let(:ipv6_cases) do
+      {
+        "::" => true,
+        "::1" => true,
+        "2001:0db8:0000:0000:0000:0000:0000:0001" => true,
+        "2001:DB8::1" => true,
+        "::ffff:192.168.0.1" => true,
+        "1000:1000:1000:1000:1000:1000:255.255.255.255" => true,
+        "" => false,
+        "1:2:3:4:5:6:7" => false,
+        "1:2:3:4:5:6:7:8::" => false,
+        "1::d6::42" => false,
+        "1:2:3:4:5:::8" => false,
+        "::ffff:192.168.0.01" => false,
+        "fe80::a%eth1" => false,
+        "[::1]" => false
+      }
+    end
+
+    it("validates hexadecimal, compressed, and IPv4-embedded forms", :aggregate_failures) do
+      expect_cases("ipv6", ipv6_cases)
+    end
+  end
+
   describe "call" do
-    it "preserves supported IPv4 and unknown-format behavior", :aggregate_failures do
+    it "preserves supported IP and unknown-format behavior", :aggregate_failures do
       ipv4 = formats.resolve("ipv4")
       expect(ipv4.call("192.0.2.1")).to be(true)
       expect(ipv4.call("999.0.2.1")).to be(false)
+      expect(formats.resolve("ipv6").call("2001:db8::1")).to be(true)
       expect(formats.resolve("unknown").call("anything")).to be(true)
     end
 
