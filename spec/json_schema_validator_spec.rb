@@ -91,6 +91,13 @@ RSpec.describe JsonSchemaValidator do
   end
 
   describe "shareable schema registries" do
+    def validate_in_ractor(registry)
+      Ractor.new(registry) do |shared_registry|
+        validator = shared_registry.validator_for("urn:wrapper")
+        [validator.valid?(1), validator.valid?(0)]
+      end
+    end
+
     let(:registry) do
       described_class::SchemaRegistry.new(
         schemas: {
@@ -111,14 +118,9 @@ RSpec.describe JsonSchemaValidator do
 
     it "can create separate validators in different Ractors" do
       registry.make_shareable
-      ractors = 2.times.map do
-        Ractor.new(registry) do |shared_registry|
-          validator = shared_registry.validator_for("urn:wrapper")
-          [validator.valid?(1), validator.valid?(0)]
-        end
-      end
-
+      ractors = 2.times.map { validate_in_ractor(registry) }
       results = ractors.map { |ractor| ractor.respond_to?(:value) ? ractor.value : ractor.take }
+
       expect(results).to eq([[true, false], [true, false]])
     end
 
