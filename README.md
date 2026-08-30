@@ -117,6 +117,8 @@ the caller.
     vocabulary can assert supported formats without the option and rejects
     unsupported formats during schema compilation.
 
+## Development
+
 Run the test suite with:
 
 ```sh
