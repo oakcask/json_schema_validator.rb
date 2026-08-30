@@ -58,6 +58,7 @@ module JsonSchemaValidator
         # evaluators sharing this graph may reach the dynamic reference.
         @dynamic_scope = !schemas.empty?
         @default_dialect = dialect
+        @shareable = false
       end
 
       def compile(schema, base_uri: nil, dialect: @default_dialect)
@@ -76,6 +77,10 @@ module JsonSchemaValidator
           return resolved[reference]
         end
 
+        if @shareable
+          raise ResolutionError, "reference #{reference.inspect} was not resolved before sharing"
+        end
+
         target = resolve_uncached(node, reference)
         ((@resolved_refs ||= {})[node] ||= {})[reference] = target
       end
@@ -86,6 +91,30 @@ module JsonSchemaValidator
 
       def dynamic_scope?
         @dynamic_scope
+      end
+
+      def make_shareable
+        return self if @shareable
+
+        @external_schemas.each_key do |uri|
+          index_external(strip_fragment(uri.to_s), @default_dialect)
+        end
+
+        index = 0
+        while index < nodes.length
+          node = nodes[index]
+          schema = node.schema
+          if schema.is_a?(Hash)
+            ["$ref", "$recursiveRef", "$dynamicRef"].each do |keyword|
+              resolve(node, schema[keyword]) if schema.key?(keyword)
+            end
+          end
+          index += 1
+        end
+
+        @resolved_refs ||= {}
+        @shareable = true
+        Ractor.make_shareable(self)
       end
 
       private def compilation_changes

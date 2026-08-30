@@ -90,6 +90,64 @@ RSpec.describe JsonSchemaValidator do
     expect(validators.last.valid?("not a date")).to be(false)
   end
 
+  describe "shareable schema registries" do
+    def validate_in_ractor(registry)
+      Ractor.new(registry) do |shared_registry|
+        validator = shared_registry.validator_for("urn:wrapper")
+        [validator.valid?(1), validator.valid?(0)]
+      end
+    end
+
+    let(:registry) do
+      described_class::SchemaRegistry.new(
+        schemas: {
+          "urn:positive" => {"type" => "integer", "minimum" => 1},
+          "urn:wrapper" => {"$ref" => "urn:positive"}
+        }
+      )
+    end
+
+    it "resolves registered schemas before becoming shareable", :aggregate_failures do
+      expect(registry.make_shareable).to equal(registry)
+
+      expect(registry).to be_shareable
+      expect(Ractor.shareable?(registry)).to be(true)
+      expect(registry.validator_for("urn:wrapper").valid?(1)).to be(true)
+      expect(registry.validator_for("urn:wrapper").valid?(0)).to be(false)
+    end
+
+    it "can create separate validators in different Ractors" do
+      registry.make_shareable
+      ractors = 2.times.map { validate_in_ractor(registry) }
+      results = ractors.map { |ractor| ractor.respond_to?(:value) ? ractor.value : ractor.take }
+
+      expect(results).to eq([[true, false], [true, false]])
+    end
+
+    it "rejects mutation and unknown URIs after becoming shareable", :aggregate_failures do
+      registry.make_shareable
+
+      expect { registry.compile(true) }
+        .to raise_error(JsonSchemaValidator::Error, /cannot compile schemas/)
+      expect { registry.validator_for("urn:missing") }
+        .to raise_error(JsonSchemaValidator::ResolutionError, /unregistered schema URI/)
+    end
+
+    it "requires sharing before retrieving validators by URI" do
+      expect { registry.validator_for("urn:wrapper") }
+        .to raise_error(JsonSchemaValidator::Error, /make_shareable must be called/)
+    end
+
+    it "reports unresolved references while becoming shareable" do
+      registry = described_class::SchemaRegistry.new(
+        schemas: {"urn:wrapper" => {"$ref" => "urn:missing"}}
+      )
+
+      expect { registry.make_shareable }
+        .to raise_error(JsonSchemaValidator::ResolutionError, /unresolvable reference/)
+    end
+  end
+
   it "keeps format as an annotation by default" do
     expect(described_class.valid?({"format" => "email"}, "not an email")).to be(true)
   end
