@@ -97,7 +97,7 @@ to enable the supported assertions below.[^format]
 | `hostname` | Not supported |
 | `idn-hostname` | Not supported |
 | `ipv4` | Supported |
-| `ipv6` | Not supported |
+| `ipv6` | Supported |
 | `uri` | Not supported |
 | `uri-reference` | Not supported |
 | `iri` | Not supported |
