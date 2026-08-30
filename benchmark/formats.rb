@@ -18,10 +18,20 @@ suite = File.join(
   "optional",
   "format"
 )
-formats = %w[date date-time time]
+formats = %w[
+  date
+  time
+  date-time
+  duration
+  ipv4
+  ipv6
+  uuid
+  json-pointer
+  relative-json-pointer
+]
 selected_format = ENV["BENCHMARK_FORMAT"]
 if selected_format
-  raise "BENCHMARK_FORMAT must be date, date-time, or time" unless formats.include?(selected_format)
+  raise "BENCHMARK_FORMAT must be one of: #{formats.join(", ")}" unless formats.include?(selected_format)
 
   formats = [selected_format]
 end
@@ -29,6 +39,7 @@ groups = formats.flat_map do |format|
   file = File.join(suite, "#{format}.json")
   JSON.parse(File.read(file)).map do |group|
     {
+      format: format,
       name: "#{format}.json: #{group.fetch("description")}",
       schema: group.fetch("schema"),
       tests: group.fetch("tests")
@@ -36,6 +47,9 @@ groups = formats.flat_map do |format|
   end
 end
 official_cases = groups.sum { |group| group.fetch(:tests).length }
+official_cases_by_format = groups.group_by { |group| group.fetch(:format) }.transform_values do |format_groups|
+  format_groups.sum { |group| group.fetch(:tests).length }
+end
 
 adapters = {
   "json_schema_validator" => {
@@ -89,6 +103,7 @@ end
 
 groups = groups.each_with_index.map { |group, index| group.merge(tests: selected_tests.fetch(index)) }
 cases = groups.sum { |group| group.fetch(:tests).length }
+groups_by_format = groups.group_by { |group| group.fetch(:format) }
 compiled = prepared.to_h do |name, compiled_groups|
   selected = compiled_groups.each_with_index.map do |group, index|
     group.merge(tests: selected_tests.fetch(index))
@@ -97,8 +112,13 @@ compiled = prepared.to_h do |name, compiled_groups|
   [name, selected]
 end
 
-puts "JSON-Schema-Test-Suite Draft 2020-12 date, date-time, and time formats"
+puts "JSON-Schema-Test-Suite Draft 2020-12 supported formats"
 puts "#{groups.length} schemas, #{cases}/#{official_cases} mutually correct validation cases"
+formats.each do |format|
+  format_groups = groups_by_format.fetch(format)
+  format_cases = format_groups.sum { |group| group.fetch(:tests).length }
+  puts "  #{format}: #{format_cases}/#{official_cases_by_format.fetch(format)} cases"
+end
 unless excluded.empty?
   puts "Excluded #{excluded.length} cases with product result differences:"
   excluded.each do |group, test, names|
@@ -111,31 +131,40 @@ warmup = Float(ENV.fetch("BENCHMARK_WARMUP", "2"))
 only = ENV["BENCHMARK_ONLY"]
 
 if only.nil? || only == "build"
-  Benchmark.ips do |benchmark|
-    benchmark.config(time: time, warmup: warmup)
-    adapters.each do |name, adapter|
-      benchmark.report("#{name} build") { build(groups, adapter) }
+  formats.each do |format|
+    Benchmark.ips do |benchmark|
+      benchmark.config(time: time, warmup: warmup)
+      adapters.each do |name, adapter|
+        benchmark.report("#{name} #{format} build") { build(groups_by_format.fetch(format), adapter) }
+      end
+      benchmark.compare!
     end
-    benchmark.compare!
   end
 end
 
 if only.nil? || only == "suite"
-  Benchmark.ips do |benchmark|
-    benchmark.config(time: time, warmup: warmup)
-    adapters.each do |name, adapter|
-      benchmark.report("#{name} suite") { validate_all(build(groups, adapter), adapter) }
+  formats.each do |format|
+    Benchmark.ips do |benchmark|
+      benchmark.config(time: time, warmup: warmup)
+      adapters.each do |name, adapter|
+        benchmark.report("#{name} #{format} suite") do
+          validate_all(build(groups_by_format.fetch(format), adapter), adapter)
+        end
+      end
+      benchmark.compare!
     end
-    benchmark.compare!
   end
 end
 
 if only.nil? || only == "validate"
-  Benchmark.ips do |benchmark|
-    benchmark.config(time: time, warmup: warmup)
-    adapters.each do |name, adapter|
-      benchmark.report("#{name} validate") { validate_all(compiled.fetch(name), adapter) }
+  formats.each do |format|
+    Benchmark.ips do |benchmark|
+      benchmark.config(time: time, warmup: warmup)
+      adapters.each do |name, adapter|
+        compiled_groups = compiled.fetch(name).select { |group| group.fetch(:format) == format }
+        benchmark.report("#{name} #{format} validate") { validate_all(compiled_groups, adapter) }
+      end
+      benchmark.compare!
     end
-    benchmark.compare!
   end
 end

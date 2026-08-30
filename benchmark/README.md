@@ -46,18 +46,21 @@ bundle exec ruby benchmark/draft2019_09.rb
 bundle exec ruby benchmark/draft2020_12.rb
 ```
 
-`formats.rb` compares `date`, `time`, and `date-time` assertion performance
-with `json_schemer`. It runs every case from the three Draft 2020-12 official
-format files with format validation enabled in both products. It verifies this
-product against every expected result, measures only cases both products handle
-correctly, and reports any excluded product differences before measuring.
+`formats.rb` compares assertion performance for every format listed as supported
+in the project README: `date`, `time`, `date-time`, `duration`, `ipv4`, `ipv6`,
+`uuid`, `json-pointer`, and `relative-json-pointer`. It runs every case from the
+corresponding Draft 2020-12 official format files with format validation enabled
+in both products. It verifies this product against every expected result,
+measures only cases both products handle correctly, and reports any excluded
+product differences before measuring. Results are reported and compared
+separately for each format.
 
 ```sh
 bundle exec ruby benchmark/formats.rb
 ```
 
-Set `BENCHMARK_FORMAT` to `date`, `time`, or `date-time` to measure one format
-while retaining the same correctness checks and workloads.
+Set `BENCHMARK_FORMAT` to any one of those formats to measure it alone while
+retaining the same correctness checks and workloads.
 
 ```sh
 BENCHMARK_FORMAT=date bundle exec ruby benchmark/formats.rb
