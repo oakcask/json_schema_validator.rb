@@ -55,6 +55,75 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
     end
   end
 
+  describe "failed compilation" do
+    subject(:graph) { graph_class.new(dialect: assertion_dialect) }
+
+    let(:assertion_dialect) do
+      dialect_class.new(
+        name: :format_assertion,
+        uri: "https://example.test/dialect/format-assertion",
+        keywords: draft7.keywords,
+        ref_siblings: draft7.ref_siblings?,
+        format_assertion: true
+      )
+    end
+    let!(:existing) do
+      graph.compile({
+        "$id" => "https://example.test/existing",
+        "definitions" => {"value" => {"type" => "integer"}}
+      })
+    end
+    let!(:state_before) { graph_state(graph) }
+    let!(:collections_before) { graph_collections(graph, existing) }
+    let(:failing_schema) do
+      {
+        "$id" => "https://example.test/existing",
+        "$dynamicRef" => "#value",
+        "definitions" => {
+          "added" => {"$anchor" => "added", "type" => "string"},
+          "invalid" => {"format" => "unknown"}
+        }
+      }
+    end
+
+    def graph_state(graph)
+      {
+        resources: graph.resources.dup,
+        resource_nodes: graph.resources.transform_values { |resource| resource.nodes.dup },
+        uri_registry: graph.uri_registry.dup,
+        nodes: graph.nodes.dup,
+        dynamic_scope: graph.dynamic_scope?
+      }
+    end
+
+    def graph_collections(graph, root)
+      [graph.resources, graph.uri_registry, graph.nodes, root.resource.nodes]
+    end
+
+    def expect_same_collections(actual, expected)
+      expect(actual).to match(expected.map { |collection| equal(collection) })
+    end
+
+    it "leaves the graph unchanged when a nested schema raises", :aggregate_failures do
+      expect { graph.compile(failing_schema) }
+        .to raise_error(JsonSchemaValidator::UnsupportedFormatError, /unsupported format "unknown"/)
+      expect(graph_state(graph)).to eq(state_before)
+      expect_same_collections(graph_collections(graph, existing), collections_before)
+      expect(graph.node_at("https://example.test/existing")).to equal(existing)
+    end
+  end
+
+  describe "dynamic scope tracking" do
+    it "remains enabled after a compiled schema requires it" do
+      graph = graph_class.new
+
+      graph.compile({"$dynamicRef" => "#item"})
+      graph.compile(true)
+
+      expect(graph).to be_dynamic_scope
+    end
+  end
+
   describe "$ref sibling policies" do
     let(:reference) { "#/definitions/value" }
     let(:definitions) { {"value" => {"type" => "integer"}} }

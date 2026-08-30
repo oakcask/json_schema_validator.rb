@@ -23,7 +23,7 @@ module JsonSchemaValidator
 
         def add(node)
           (@nodes ||= {})[node.resource_path] = node unless node.equal?(root)
-          node.resource = self
+          node.resource = self unless node.resource.equal?(self)
         end
 
         def node_at(pointer)
@@ -53,21 +53,26 @@ module JsonSchemaValidator
         @dynamic_anchors = {}
         # External schemas are indexed lazily, so their references are not yet
         # available to compile_node. Track conservatively from the caller.
+        # Once required, dynamic scope tracking must remain enabled because all
+        # evaluators sharing this graph may reach the dynamic reference.
         @dynamic_scope = !schemas.empty?
         @default_dialect = dialect
       end
 
       def compile(schema, base_uri: nil, dialect: @default_dialect)
-        root_dialect = dialect_for(schema, dialect)
-        compile_document(schema, base_uri.to_s, root_dialect)
+        compile_atomically do |changes|
+          root_dialect = dialect_for(schema, dialect, changes)
+          compile_document(schema, base_uri.to_s, root_dialect, changes)
+        end
       end
 
       def resolve(node, reference)
-        resolved_refs = (@resolved_refs ||= {})
-        resolved = (resolved_refs[node] ||= {})
-        return resolved[reference] if resolved.key?(reference)
+        if (resolved = @resolved_refs&.[](node))&.key?(reference)
+          return resolved[reference]
+        end
 
-        resolved[reference] = resolve_uncached(node, reference)
+        target = resolve_uncached(node, reference)
+        ((@resolved_refs ||= {})[node] ||= {})[reference] = target
       end
 
       def dynamic_anchor(resource, name)
@@ -76,6 +81,45 @@ module JsonSchemaValidator
 
       def dynamic_scope?
         @dynamic_scope
+      end
+
+      private def compilation_changes
+        {
+          resources: {},
+          resource_nodes: {},
+          uri_registry: {},
+          nodes: [],
+          document_locations: [],
+          dynamic_anchors: {},
+          custom_dialects: {},
+          requires_dynamic_scope: false
+        }
+      end
+
+      private def compile_atomically
+        changes = compilation_changes
+        result = yield changes
+        commit(changes)
+        result
+      end
+
+      private def commit(changes)
+        resources.update(changes[:resources])
+        changes[:resource_nodes].each do |resource, resource_nodes|
+          resource_nodes.each_value { |node| resource.add(node) }
+        end
+        uri_registry.update(changes[:uri_registry])
+        nodes.concat(changes[:nodes])
+        if @nodes_by_document_location
+          changes[:document_locations].each do |document_key, schema_path, node|
+            (@nodes_by_document_location[document_key] ||= {})[schema_path] = node
+          end
+        end
+        changes[:dynamic_anchors].each do |resource, anchors|
+          (@dynamic_anchors[resource] ||= {}).update(anchors)
+        end
+        (@custom_dialects ||= {}).update(changes[:custom_dialects]) unless changes[:custom_dialects].empty?
+        @dynamic_scope = true if changes[:requires_dynamic_scope]
       end
 
       private def resolve_uncached(node, reference)
@@ -111,15 +155,18 @@ module JsonSchemaValidator
         end
 
         target = pointer_target(resource.root.schema, pointer)
-        compile_node(
-          target,
-          resource.root.base_uri,
-          resource.root.dialect,
-          schema_path,
-          pointer,
-          resource,
-          resource.root.document_key
-        )
+        compile_atomically do |changes|
+          compile_node(
+            target,
+            resource.root.base_uri,
+            resource.root.dialect,
+            schema_path,
+            pointer,
+            resource,
+            resource.root.document_key,
+            changes
+          )
+        end
       rescue URI::Error
         raise ResolutionError, "unresolvable reference #{reference.inspect}"
       end
@@ -128,22 +175,22 @@ module JsonSchemaValidator
         uri_registry[uri.to_s]
       end
 
-      private def compile_document(schema, retrieval_uri, dialect)
+      private def compile_document(schema, retrieval_uri, dialect, changes)
         document_key = retrieval_uri.empty? ? Object.new : retrieval_uri
-        root = compile_node(schema, retrieval_uri, dialect, "", "", nil, document_key)
+        root = compile_node(schema, retrieval_uri, dialect, "", "", nil, document_key, changes)
         document_uri = strip_fragment(retrieval_uri)
-        register_resource(document_uri, root) unless document_uri.empty? || resources.key?(document_uri)
-        uri_registry[retrieval_uri] ||= root unless retrieval_uri.empty?
-        uri_registry[document_uri] ||= root unless document_uri.empty?
+        register_resource(document_uri, root, changes) unless document_uri.empty? || resource_at(document_uri, changes)
+        register_uri_unless_present(retrieval_uri, root, changes) unless retrieval_uri.empty?
+        register_uri_unless_present(document_uri, root, changes) unless document_uri.empty?
         root
       end
 
-      private def compile_node(schema, inherited_base, dialect, schema_path, resource_path, resource, document_key)
+      private def compile_node(schema, inherited_base, dialect, schema_path, resource_path, resource, document_key, changes)
         hash_schema = schema.is_a?(Hash)
         if hash_schema && (schema.key?("$recursiveRef") || schema.key?("$dynamicRef"))
-          @dynamic_scope = true
+          changes[:requires_dynamic_scope] = true
         end
-        dialect = dialect_for(schema, dialect) if hash_schema && schema.key?("$schema")
+        dialect = dialect_for(schema, dialect, changes) if hash_schema && schema.key?("$schema")
         if hash_schema && dialect.format_assertion? && schema.key?("format") &&
             Formats.resolve(schema["format"]).name.nil?
           raise UnsupportedFormatError,
@@ -168,24 +215,27 @@ module JsonSchemaValidator
           resource_path: resource_path,
           document_key: document_key
         )
-        nodes << node
-        if @nodes_by_document_location
-          (@nodes_by_document_location[document_key] ||= {})[schema_path] = node
-        end
+        changes[:nodes] << node
+        changes[:document_locations] << [document_key, schema_path, node]
 
         if hash_schema && schema.key?("$id") && !exclusive_ref && !base.empty?
-          uri_registry[base] = node
+          changes[:uri_registry][base] = node
           if starts_resource
-            resource = register_resource(strip_fragment(base), node)
+            resource = register_resource(strip_fragment(base), node, changes)
           end
         end
 
-        resource ||= register_resource(strip_fragment(base), node)
-        resource.add(node) unless node.resource
+        resource ||= register_resource(strip_fragment(base), node, changes)
+        unless node.resource
+          node.resource = resource
+          (changes[:resource_nodes][resource] ||= {})[node.resource_path] = node unless node.equal?(resource.root)
+        end
 
         if hash_schema && !exclusive_ref
-          register_anchor(node, resource, schema["$anchor"]) if schema.key?("$anchor")
-          register_anchor(node, resource, schema["$dynamicAnchor"], dynamic: true) if schema.key?("$dynamicAnchor")
+          register_anchor(node, resource, schema["$anchor"], changes) if schema.key?("$anchor")
+          if schema.key?("$dynamicAnchor")
+            register_anchor(node, resource, schema["$dynamicAnchor"], changes, dynamic: true)
+          end
         end
 
         dialect.each_subschema(schema) do |child_schema, segments|
@@ -202,76 +252,101 @@ module JsonSchemaValidator
             child_schema_path,
             child_resource_path,
             resource,
-            document_key
+            document_key,
+            changes
           )
           node.add_child(*segments, child: child)
         end
         node.freeze
       end
 
-      private def register_resource(uri, root)
+      private def register_resource(uri, root, changes)
         return Resource.new(uri, root) if uri.empty?
 
-        resource = resources[uri]
+        resource = resource_at(uri, changes)
         return resource if resource && resource.root.equal?(root)
         return resource if resource
 
-        resources[uri] = Resource.new(uri, root)
+        changes[:resources][uri] = Resource.new(uri, root)
       end
 
-      private def register_anchor(node, resource, name, dynamic: false)
+      private def resource_at(uri, changes)
+        changes[:resources].fetch(uri) { resources[uri] }
+      end
+
+      private def register_uri_unless_present(uri, node, changes)
+        return if changes[:uri_registry].key?(uri) || uri_registry.key?(uri)
+
+        changes[:uri_registry][uri] = node
+      end
+
+      private def register_anchor(node, resource, name, changes, dynamic: false)
         return unless name.is_a?(String) && !name.empty?
 
-        uri_registry["#{resource.uri}##{name}"] = node
-        (@dynamic_anchors[resource] ||= {})[name] = node if dynamic
+        changes[:uri_registry]["#{resource.uri}##{name}"] = node
+        ((changes[:dynamic_anchors][resource] ||= {})[name] = node) if dynamic
       end
 
       private def node_by_document_location(document_key, schema_path)
-        locations = (@nodes_by_document_location ||= nodes.each_with_object({}) do |node, result|
-          (result[node.document_key] ||= {})[node.schema_path] = node
-        end)
-        locations.dig(document_key, schema_path)
+        unless @nodes_by_document_location
+          target = nodes.find { |node| node.document_key == document_key && node.schema_path == schema_path }
+          return unless target
+
+          @nodes_by_document_location = nodes.each_with_object({}) do |node, result|
+            (result[node.document_key] ||= {})[node.schema_path] = node
+          end
+        end
+        @nodes_by_document_location.dig(document_key, schema_path)
       end
 
       private def index_external(document_uri, fallback_dialect)
-        indexed = (@indexed_external_schemas ||= {})
-        return if indexed[document_uri]
+        return if @indexed_external_schemas&.[](document_uri)
 
-        indexed[document_uri] = true
         if (dialect = Dialect.resolve(document_uri)) && (meta_schema = MetaSchemas.resolve(document_uri))
-          compile_document(meta_schema, dialect.uri, dialect)
+          compile_atomically do |changes|
+            compile_document(meta_schema, dialect.uri, dialect, changes)
+          end
+          (@indexed_external_schemas ||= {})[document_uri] = true
           return
         end
         if @external_schemas.key?(document_uri)
           external_schema = @external_schemas[document_uri]
-          dialect = dialect_for(external_schema, fallback_dialect)
-          compile_document(external_schema, document_uri, dialect)
+          compile_atomically do |changes|
+            dialect = dialect_for(external_schema, fallback_dialect, changes)
+            compile_document(external_schema, document_uri, dialect, changes)
+          end
+          (@indexed_external_schemas ||= {})[document_uri] = true
           return
         end
 
         matches = @external_schemas.select do |external_uri, _schema|
           strip_fragment(external_uri.to_s) == document_uri
         end
-        matches.each do |external_uri, external_schema|
-          external_uri = external_uri.to_s
-          dialect = dialect_for(external_schema, fallback_dialect)
-          external_root = compile_document(external_schema, external_uri, dialect)
-          uri_registry[external_uri] ||= external_root
+        compile_atomically do |changes|
+          matches.each do |external_uri, external_schema|
+            external_uri = external_uri.to_s
+            dialect = dialect_for(external_schema, fallback_dialect, changes)
+            compile_document(external_schema, external_uri, dialect, changes)
+          end
         end
+        (@indexed_external_schemas ||= {})[document_uri] = true
       end
 
-      private def dialect_for(schema, fallback)
+      private def dialect_for(schema, fallback, changes = nil)
         return fallback unless schema.is_a?(Hash) && schema.key?("$schema")
 
         uri = schema["$schema"].to_s
-        Dialect.resolve(uri) || custom_dialect(uri, fallback) || fallback
+        Dialect.resolve(uri) || custom_dialect(uri, fallback, changes) || fallback
       end
 
-      private def custom_dialect(uri, fallback)
+      private def custom_dialect(uri, fallback, changes)
         meta_schema = @external_schemas[uri] || @external_schemas[uri.delete_suffix("#")]
         return unless meta_schema.is_a?(Hash) && meta_schema["$vocabulary"].is_a?(Hash)
 
-        custom_dialects = (@custom_dialects ||= {})
+        custom_dialects = changes ? changes[:custom_dialects] : (@custom_dialects ||= {})
+        return custom_dialects[uri] if custom_dialects.key?(uri)
+        return @custom_dialects[uri] if @custom_dialects&.key?(uri)
+
         custom_dialects[uri] ||= begin
           vocabulary = meta_schema["$vocabulary"]
           validation = vocabulary.any? { |name, enabled| enabled && name.end_with?("/validation") }
