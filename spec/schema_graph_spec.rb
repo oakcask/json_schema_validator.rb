@@ -67,6 +67,24 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
         format_assertion: true
       )
     end
+    let!(:existing) do
+      graph.compile({
+        "$id" => "https://example.test/existing",
+        "definitions" => {"value" => {"type" => "integer"}}
+      })
+    end
+    let!(:state_before) { graph_state(graph) }
+    let!(:collections_before) { graph_collections(graph, existing) }
+    let(:failing_schema) do
+      {
+        "$id" => "https://example.test/existing",
+        "$dynamicRef" => "#value",
+        "definitions" => {
+          "added" => {"$anchor" => "added", "type" => "string"},
+          "invalid" => {"format" => "unknown"}
+        }
+      }
+    end
 
     def graph_state(graph)
       {
@@ -78,27 +96,19 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
       }
     end
 
-    it "leaves the graph unchanged when a nested schema raises", :aggregate_failures do
-      existing = graph.compile({
-        "$id" => "https://example.test/existing",
-        "definitions" => {"value" => {"type" => "integer"}}
-      })
-      state_before = graph_state(graph)
-      collections_before = [graph.resources, graph.uri_registry, graph.nodes, existing.resource.nodes]
-      failing_schema = {
-        "$id" => "https://example.test/existing",
-        "$dynamicRef" => "#value",
-        "definitions" => {
-          "added" => {"$anchor" => "added", "type" => "string"},
-          "invalid" => {"format" => "unknown"}
-        }
-      }
+    def graph_collections(graph, root)
+      [graph.resources, graph.uri_registry, graph.nodes, root.resource.nodes]
+    end
 
+    def expect_same_collections(actual, expected)
+      expect(actual).to match(expected.map { |collection| equal(collection) })
+    end
+
+    it "leaves the graph unchanged when a nested schema raises", :aggregate_failures do
       expect { graph.compile(failing_schema) }
         .to raise_error(JsonSchemaValidator::UnsupportedFormatError, /unsupported format "unknown"/)
       expect(graph_state(graph)).to eq(state_before)
-      expect([graph.resources, graph.uri_registry, graph.nodes, existing.resource.nodes])
-        .to match(collections_before.map { |collection| equal(collection) })
+      expect_same_collections(graph_collections(graph, existing), collections_before)
       expect(graph.node_at("https://example.test/existing")).to equal(existing)
     end
   end
