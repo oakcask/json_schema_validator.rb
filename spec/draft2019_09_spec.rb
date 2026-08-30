@@ -37,7 +37,7 @@ RSpec.describe "JSON Schema Draft 2019-09 official suite" do
     end
   end
 
-  enabled_formats = %w[date date-time time]
+  enabled_formats = %w[date date-time ipv4 time]
   format_files = Dir[File.join(suite_root, "tests", "draft2019-09", "optional", "format", "*.json")]
   format_files.sort.each do |file|
     format = File.basename(file, ".json")

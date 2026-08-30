@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "ipaddr"
-
 module JsonSchemaValidator
   module Internal
     module Formats
@@ -32,12 +30,10 @@ module JsonSchemaValidator
           elsif format.equal?(DATE_TIME)
             valid_date_time?(value)
           elsif format.equal?(IPV4)
-            IPAddr.new(value).ipv4?
+            valid_ipv4?(value)
           else
             true
           end
-        rescue IPAddr::InvalidAddressError
-          false
         end
 
         private def valid_date?(value)
@@ -114,6 +110,38 @@ module JsonSchemaValidator
             valid_date_at?(value, 0) &&
             (value.getbyte(10) == 84 || value.getbyte(10) == 116) &&
             valid_time_at?(value, 11)
+        end
+
+        private def valid_ipv4?(value)
+          index = 0
+          length = value.bytesize
+
+          4.times do |octet|
+            byte = value.getbyte(index)
+            return false unless byte&.between?(48, 57)
+            return false if byte == 48 && value.getbyte(index + 1)&.between?(48, 57)
+
+            number = 0
+            digits = 0
+            while (byte = value.getbyte(index))&.between?(48, 57)
+              number = (number * 10) + byte - 48
+              digits += 1
+              return false if digits > 3
+
+              index += 1
+            end
+            return false if number > 255
+
+            if octet == 3
+              return false unless index == length
+            else
+              return false unless value.getbyte(index) == 46
+
+              index += 1
+            end
+          end
+
+          true
         end
 
         private def two_digits(value, start)
