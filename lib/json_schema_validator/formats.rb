@@ -3,57 +3,16 @@
 module JsonSchemaValidator
   module Internal
     module Formats
-      Format = Data.define(:name)
+      class Format
+        attr_reader :name
 
-      UNKNOWN = Format.new(nil)
-      DATE = Format.new("date")
-      TIME = Format.new("time")
-      DATE_TIME = Format.new("date-time")
-      DURATION = Format.new("duration")
-      IPV4 = Format.new("ipv4")
-      JSON_POINTER = Format.new("json-pointer")
-      RELATIVE_JSON_POINTER = Format.new("relative-json-pointer")
-      UUID = Format.new("uuid")
-
-      class << self
-        def resolve(format)
-          case format
-          when "date" then DATE
-          when "time" then TIME
-          when "date-time" then DATE_TIME
-          when "duration" then DURATION
-          when "ipv4" then IPV4
-          when "json-pointer" then JSON_POINTER
-          when "relative-json-pointer" then RELATIVE_JSON_POINTER
-          when "uuid" then UUID
-          else UNKNOWN
-          end
+        def initialize(name = nil)
+          @name = name
+          freeze
         end
 
-        def valid?(format, value)
-          if format.equal?(DATE)
-            valid_date?(value)
-          elsif format.equal?(TIME)
-            valid_time?(value)
-          elsif format.equal?(DATE_TIME)
-            valid_date_time?(value)
-          elsif format.equal?(DURATION)
-            valid_duration?(value)
-          elsif format.equal?(IPV4)
-            valid_ipv4?(value)
-          elsif format.equal?(JSON_POINTER)
-            valid_json_pointer?(value)
-          elsif format.equal?(RELATIVE_JSON_POINTER)
-            valid_relative_json_pointer?(value)
-          elsif format.equal?(UUID)
-            valid_uuid?(value)
-          else
-            true
-          end
-        end
-
-        private def valid_date?(value)
-          value.bytesize == 10 && valid_date_at?(value, 0)
+        def call(_value)
+          true
         end
 
         private def valid_date_at?(value, start)
@@ -76,10 +35,6 @@ module JsonSchemaValidator
             31
           end
           day.between?(1, last_day)
-        end
-
-        private def valid_time?(value)
-          valid_time_at?(value, 0)
         end
 
         private def valid_time_at?(value, start)
@@ -121,46 +76,106 @@ module JsonSchemaValidator
           second != 60 || ((hour * 60) + minute - offset) % 1_440 == 1_439
         end
 
-        private def valid_date_time?(value)
-          value.bytesize >= 20 &&
-            valid_date_at?(value, 0) &&
-            (value.getbyte(10) == 84 || value.getbyte(10) == 116) &&
-            valid_time_at?(value, 11)
+        private def valid_duration_time_at?(value, index)
+          length = value.bytesize
+          number_end = ascii_digits_end(value, index)
+          return false unless number_end
+
+          case value.getbyte(number_end)
+          when 72 # H
+            index = number_end + 1
+            if (number_end = ascii_digits_end(value, index))
+              return false unless value.getbyte(number_end) == 77 # M
+
+              index = number_end + 1
+              if (number_end = ascii_digits_end(value, index))
+                return false unless value.getbyte(number_end) == 83 # S
+
+                index = number_end + 1
+              end
+            end
+          when 77 # M
+            index = number_end + 1
+            if (number_end = ascii_digits_end(value, index))
+              return false unless value.getbyte(number_end) == 83 # S
+
+              index = number_end + 1
+            end
+          when 83 # S
+            index = number_end + 1
+          else
+            return false
+          end
+
+          index == length
         end
 
-        private def valid_ipv4?(value)
-          index = 0
+        private def valid_json_pointer_at?(value, index)
           length = value.bytesize
+          return true if index == length
+          return false unless value.getbyte(index) == 47 # /
 
-          4.times do |octet|
-            byte = value.getbyte(index)
-            return false unless byte&.between?(48, 57)
-            return false if byte == 48 && value.getbyte(index + 1)&.between?(48, 57)
-
-            number = 0
-            digits = 0
-            while (byte = value.getbyte(index))&.between?(48, 57)
-              number = (number * 10) + byte - 48
-              digits += 1
-              return false if digits > 3
-
+          while index < length
+            if value.getbyte(index) == 126 # ~
               index += 1
+              return false unless value.getbyte(index) == 48 || value.getbyte(index) == 49 # 0 or 1
             end
-            return false if number > 255
-
-            if octet == 3
-              return false unless index == length
-            else
-              return false unless value.getbyte(index) == 46
-
-              index += 1
-            end
+            index += 1
           end
 
           true
         end
 
-        private def valid_duration?(value)
+        private def ascii_digits_end(value, index)
+          start = index
+          index += 1 while value.getbyte(index)&.between?(48, 57)
+          index unless index == start
+        end
+
+        private def two_digits(value, start)
+          tens = value.getbyte(start) - 48
+          ones = value.getbyte(start + 1) - 48
+          return unless tens.between?(0, 9) && ones.between?(0, 9)
+
+          (tens * 10) + ones
+        end
+
+        private def leap_year?(year)
+          (year % 4).zero? && (!(year % 100).zero? || (year % 400).zero?)
+        end
+      end
+
+      class DateFormat < Format
+        def initialize = super("date")
+
+        def call(value)
+          value.bytesize == 10 && valid_date_at?(value, 0)
+        end
+      end
+
+      class TimeFormat < Format
+        def initialize = super("time")
+
+        def call(value)
+          valid_time_at?(value, 0)
+        end
+      end
+
+      class DateTimeFormat < Format
+        def initialize = super("date-time")
+
+        def call(value)
+          value.bytesize >= 20 &&
+            valid_date_at?(value, 0) &&
+            (value.getbyte(10) == 84 || value.getbyte(10) == 116) &&
+            valid_time_at?(value, 11)
+        end
+      end
+
+      class DurationFormat < Format
+        def initialize = super("duration")
+
+        def call(value)
           length = value.bytesize
           return false unless value.getbyte(0) == 80 && length > 1
 
@@ -203,62 +218,56 @@ module JsonSchemaValidator
 
           valid_duration_time_at?(value, index + 1)
         end
+      end
 
-        private def valid_duration_time_at?(value, index)
+      class Ipv4Format < Format
+        def initialize = super("ipv4")
+
+        def call(value)
+          index = 0
           length = value.bytesize
-          number_end = ascii_digits_end(value, index)
-          return false unless number_end
 
-          case value.getbyte(number_end)
-          when 72 # H
-            index = number_end + 1
-            if (number_end = ascii_digits_end(value, index))
-              return false unless value.getbyte(number_end) == 77 # M
+          4.times do |octet|
+            byte = value.getbyte(index)
+            return false unless byte&.between?(48, 57)
+            return false if byte == 48 && value.getbyte(index + 1)&.between?(48, 57)
 
-              index = number_end + 1
-              if (number_end = ascii_digits_end(value, index))
-                return false unless value.getbyte(number_end) == 83 # S
+            number = 0
+            digits = 0
+            while (byte = value.getbyte(index))&.between?(48, 57)
+              number = (number * 10) + byte - 48
+              digits += 1
+              return false if digits > 3
 
-                index = number_end + 1
-              end
-            end
-          when 77 # M
-            index = number_end + 1
-            if (number_end = ascii_digits_end(value, index))
-              return false unless value.getbyte(number_end) == 83 # S
-
-              index = number_end + 1
-            end
-          when 83 # S
-            index = number_end + 1
-          else
-            return false
-          end
-
-          index == length
-        end
-
-        private def valid_json_pointer?(value)
-          valid_json_pointer_at?(value, 0)
-        end
-
-        private def valid_json_pointer_at?(value, index)
-          length = value.bytesize
-          return true if index == length
-          return false unless value.getbyte(index) == 47 # /
-
-          while index < length
-            if value.getbyte(index) == 126 # ~
               index += 1
-              return false unless value.getbyte(index) == 48 || value.getbyte(index) == 49 # 0 or 1
             end
-            index += 1
+            return false if number > 255
+
+            if octet == 3
+              return false unless index == length
+            else
+              return false unless value.getbyte(index) == 46
+
+              index += 1
+            end
           end
 
           true
         end
+      end
 
-        private def valid_relative_json_pointer?(value)
+      class JsonPointerFormat < Format
+        def initialize = super("json-pointer")
+
+        def call(value)
+          valid_json_pointer_at?(value, 0)
+        end
+      end
+
+      class RelativeJsonPointerFormat < Format
+        def initialize = super("relative-json-pointer")
+
+        def call(value)
           length = value.bytesize
           first = value.getbyte(0)
           return false unless first&.between?(48, 57)
@@ -272,8 +281,12 @@ module JsonSchemaValidator
 
           valid_json_pointer_at?(value, index)
         end
+      end
 
-        private def valid_uuid?(value)
+      class UuidFormat < Format
+        def initialize = super("uuid")
+
+        def call(value)
           return false unless value.bytesize == 36
 
           36.times do |index|
@@ -287,28 +300,37 @@ module JsonSchemaValidator
 
           true
         end
+      end
 
-        private def ascii_digits_end(value, index)
-          start = index
-          index += 1 while value.getbyte(index)&.between?(48, 57)
-          index unless index == start
-        end
+      UNKNOWN = Format.new
+      DATE = DateFormat.new
+      TIME = TimeFormat.new
+      DATE_TIME = DateTimeFormat.new
+      DURATION = DurationFormat.new
+      IPV4 = Ipv4Format.new
+      JSON_POINTER = JsonPointerFormat.new
+      RELATIVE_JSON_POINTER = RelativeJsonPointerFormat.new
+      UUID = UuidFormat.new
 
-        private def two_digits(value, start)
-          tens = value.getbyte(start) - 48
-          ones = value.getbyte(start + 1) - 48
-          return unless tens.between?(0, 9) && ones.between?(0, 9)
-
-          (tens * 10) + ones
-        end
-
-        private def leap_year?(year)
-          (year % 4).zero? && (!(year % 100).zero? || (year % 400).zero?)
+      class << self
+        def resolve(format)
+          case format
+          when "date" then DATE
+          when "time" then TIME
+          when "date-time" then DATE_TIME
+          when "duration" then DURATION
+          when "ipv4" then IPV4
+          when "json-pointer" then JSON_POINTER
+          when "relative-json-pointer" then RELATIVE_JSON_POINTER
+          when "uuid" then UUID
+          else UNKNOWN
+          end
         end
       end
 
-      private_constant :Format, :UNKNOWN, :DATE, :TIME, :DATE_TIME, :DURATION, :IPV4,
-        :JSON_POINTER, :RELATIVE_JSON_POINTER, :UUID
+      private_constant :Format, :DateFormat, :TimeFormat, :DateTimeFormat, :DurationFormat,
+        :Ipv4Format, :JsonPointerFormat, :RelativeJsonPointerFormat, :UuidFormat, :UNKNOWN,
+        :DATE, :TIME, :DATE_TIME, :DURATION, :IPV4, :JSON_POINTER, :RELATIVE_JSON_POINTER, :UUID
     end
   end
 
