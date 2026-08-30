@@ -32,10 +32,7 @@ def build(groups, remotes)
   registry = JsonSchemaValidator::SchemaRegistry.new(schemas: remotes)
   groups.map do |group|
     group.merge(
-      validator: JsonSchemaValidator::Validator.new(
-        registry.compile(group.fetch(:schema)),
-        content: group.fetch(:content)
-      )
+      validator: registry.compile(group.fetch(:schema), content: group.fetch(:content))
     )
   end
 end

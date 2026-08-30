@@ -36,8 +36,7 @@ registry = JsonSchemaValidator::SchemaRegistry.new(
     "https://example.test/positive" => { "type" => "integer", "minimum" => 1 }
   }
 )
-schema = registry.compile("$ref" => "https://example.test/positive")
-validator = JsonSchemaValidator::Validator.new(schema)
+validator = registry.compile({"$ref" => "https://example.test/positive"})
 
 validator.valid?(1) # => true
 validator.valid?(0) # => false
@@ -45,8 +44,9 @@ validator.validate(0).errors # detailed errors, without recompiling the schema
 ```
 
 `JsonSchemaValidator.compile` is a convenience for compiling a standalone
-schema. `JsonSchemaValidator.validate` and `.valid?` continue to accept raw
-JSON-like schemas and perform compilation internally.
+validator. Repeatedly compiling the same schema object with one registry reuses
+its compiled schema graph. `JsonSchemaValidator.validate` and `.valid?` continue
+to accept raw JSON-like schemas and perform compilation internally.
 
 To resolve external references, pass a mapping of URIs to schemas using
 `schemas:`.

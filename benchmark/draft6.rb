@@ -37,7 +37,7 @@ adapters = {
   "lib" => {
     prepare_build: -> {},
     build: lambda { |schema|
-      JsonSchemaValidator::Validator.new(JsonSchemaValidator.compile(schema))
+      JsonSchemaValidator.compile(schema)
     },
     valid: ->(validator, data) { validator.valid?(data) }
   },

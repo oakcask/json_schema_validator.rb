@@ -41,8 +41,9 @@ schemer_ref_resolver = schemer_schemas.to_proc
 adapters = {
   "lib" => {
     build: lambda { |group|
-      JsonSchemaValidator::Validator.new(
-        JsonSchemaValidator.compile(group.fetch(:schema), schemas: remotes),
+      JsonSchemaValidator.compile(
+        group.fetch(:schema),
+        schemas: remotes,
         content: group.fetch(:content)
       )
     },
