@@ -244,6 +244,33 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
         graph_class.new(schemas: {reference => {"type" => "integer"}})
       end
 
+      it "reuses a root for the same schema identity and effective base URI" do
+        schema = {"type" => "integer"}
+
+        first = graph.compile(schema)
+        second = graph.compile(schema, base_uri: "")
+
+        expect(second).to equal(first)
+      end
+
+      it "keeps structurally equal schema objects separate" do
+        schema = {"type" => "integer"}
+
+        first = graph.compile(schema)
+        second = graph.compile(schema.dup)
+
+        expect(second).not_to equal(first)
+      end
+
+      it "keeps different base URIs separate" do
+        schema = {"type" => "integer"}
+
+        first = graph.compile(schema, base_uri: "urn:first")
+        second = graph.compile(schema, base_uri: "urn:second")
+
+        expect(second).not_to equal(first)
+      end
+
       it "reuses the compiled external resource" do
         first_root = graph.compile({"$ref" => reference})
         first_target = graph.resolve(first_root, reference)

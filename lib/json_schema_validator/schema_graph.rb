@@ -45,6 +45,7 @@ module JsonSchemaValidator
       def initialize(schemas: {}, dialect: Dialect.resolve)
         @external_schemas = schemas.dup
         @indexed_external_schemas = nil
+        @compiled_roots = {}.compare_by_identity
         @resources = {}
         @uri_registry = {}
         @nodes = []
@@ -60,9 +61,13 @@ module JsonSchemaValidator
       end
 
       def compile(schema, base_uri: nil, dialect: @default_dialect)
-        compile_atomically do |changes|
-          root_dialect = dialect_for(schema, dialect, changes)
-          compile_document(schema, base_uri.to_s, root_dialect, changes)
+        roots = @compiled_roots.fetch(schema) { @compiled_roots[schema] = {} }
+        cache_key = [base_uri.to_s, dialect]
+        roots.fetch(cache_key) do
+          roots[cache_key] = compile_atomically do |changes|
+            root_dialect = dialect_for(schema, dialect, changes)
+            compile_document(schema, base_uri.to_s, root_dialect, changes)
+          end
         end
       end
 

@@ -29,38 +29,20 @@ module JsonSchemaValidator
     alias_method :success?, :valid?
   end
 
-  CompiledSchema = Data.define(:graph, :root)
-
   class SchemaRegistry
-    UNDEFINED_SCHEMA = Object.new.freeze
-    private_constant :UNDEFINED_SCHEMA
-
     def initialize(schemas: {})
       @graph = Internal::SchemaGraph.new(schemas: schemas)
     end
 
-    def compile(schema = UNDEFINED_SCHEMA, base_uri: nil, **schema_keywords)
-      if schema.equal?(UNDEFINED_SCHEMA)
-        raise ArgumentError, "schema is required" if schema_keywords.empty?
-
-        schema = schema_keywords
-      elsif !schema_keywords.empty?
-        raise ArgumentError, "schema must be passed as one object"
-      end
-
+    def compile(schema, base_uri: nil, content: false, format: false)
       root = @graph.compile(schema, base_uri: base_uri)
-      CompiledSchema.new(@graph, root)
+      Validator.new(@graph, root, content: content, format: format)
     end
   end
 
   class Validator
-    def initialize(schema = nil, content: false, format: false, **schema_keywords)
-      schema = schema_keywords unless schema_keywords.empty?
-      unless schema.is_a?(CompiledSchema)
-        raise ArgumentError, "schema must be compiled by SchemaRegistry#compile"
-      end
-
-      @evaluator = Internal::Evaluator.new(schema, content: content, format: format)
+    def initialize(graph, root, content:, format:)
+      @evaluator = Internal::Evaluator.new(graph, root, content: content, format: format)
     end
 
     def validate(instance)
@@ -72,17 +54,32 @@ module JsonSchemaValidator
     end
   end
 
-  module_function def compile(*args, schemas: {}, base_uri: nil, **schema_keywords)
-    SchemaRegistry.new(schemas: schemas).compile(*args, base_uri: base_uri, **schema_keywords)
+  module_function def compile(schema, schemas: {}, base_uri: nil, content: false, format: false)
+    SchemaRegistry.new(schemas: schemas).compile(
+      schema,
+      base_uri: base_uri,
+      content: content,
+      format: format
+    )
   end
 
   module_function def validate(schema, instance, schemas: {}, base_uri: nil, content: false, format: false)
-    compiled = compile(schema, schemas: schemas, base_uri: base_uri)
-    Validator.new(compiled, content: content, format: format).validate(instance)
+    compile(
+      schema,
+      schemas: schemas,
+      base_uri: base_uri,
+      content: content,
+      format: format
+    ).validate(instance)
   end
 
   module_function def valid?(schema, instance, schemas: {}, base_uri: nil, content: false, format: false)
-    compiled = compile(schema, schemas: schemas, base_uri: base_uri)
-    Validator.new(compiled, content: content, format: format).valid?(instance)
+    compile(
+      schema,
+      schemas: schemas,
+      base_uri: base_uri,
+      content: content,
+      format: format
+    ).valid?(instance)
   end
 end

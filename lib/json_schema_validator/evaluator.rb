@@ -7,11 +7,11 @@ require_relative "evaluation"
 module JsonSchemaValidator
   module Internal
     class Evaluator
-      def initialize(schema, content: false, format: false)
+      def initialize(graph, root, content: false, format: false)
         @validate_content = content
         @validate_format = format
-        @graph = schema.graph
-        @root = schema.root
+        @graph = graph
+        @root = root
         @regexps = nil
         @active = nil
       end

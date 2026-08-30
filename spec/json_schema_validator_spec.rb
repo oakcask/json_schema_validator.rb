@@ -26,7 +26,7 @@ RSpec.describe JsonSchemaValidator do
 
   it "keeps implementation constants private" do
     expected = %i[
-      CompiledSchema Error ResolutionError Result SchemaRegistry UnsupportedFormatError ValidationError Validator
+      Error ResolutionError Result SchemaRegistry UnsupportedFormatError ValidationError Validator
     ]
     expect(described_class.constants(false)).to match_array(expected)
   end
@@ -54,24 +54,39 @@ RSpec.describe JsonSchemaValidator do
   end
 
   it "validates repeatedly with a compiled schema", :aggregate_failures do
-    compiled = described_class.compile("type" => "integer")
-    validator = described_class::Validator.new(compiled)
+    validator = described_class.compile({"type" => "integer"})
 
     expect(validator.valid?(1)).to be(true)
     expect(validator.valid?("1")).to be(false)
     expect(validator.validate("1")).not_to be_valid
   end
 
-  it "requires Validator schemas to be compiled" do
-    expect { described_class::Validator.new("type" => "integer") }
-      .to raise_error(ArgumentError, /SchemaRegistry#compile/)
+  it "requires the schema as a positional argument", :aggregate_failures do
+    schema = {"type" => "string", "format" => "date"}
+    annotation_validator = described_class.compile(schema)
+    assertion_validator = described_class.compile(schema, format: true)
+
+    expect(annotation_validator.valid?("not a date")).to be(true)
+    expect(assertion_validator.valid?("not a date")).to be(false)
+    expect { described_class.compile(type: "string") }.to raise_error(ArgumentError)
   end
 
   it "shares registered schemas between compiled schemas" do
     registry = described_class::SchemaRegistry.new(schemas: {"urn:integer" => {"type" => "integer"}})
-    validators = 2.times.map { described_class::Validator.new(registry.compile("$ref" => "urn:integer")) }
+    validators = 2.times.map { registry.compile({"$ref" => "urn:integer"}) }
     results = [validators.first.valid?(1), validators.last.valid?("1")]
     expect(results).to eq([true, false])
+  end
+
+  it "reuses a compiled root for validators with different options", :aggregate_failures do
+    registry = described_class::SchemaRegistry.new
+    schema = {"format" => "date"}
+
+    annotation_validator = registry.compile(schema)
+    assertion_validator = registry.compile(schema, base_uri: "", format: true)
+
+    expect(annotation_validator.valid?("not a date")).to be(true)
+    expect(assertion_validator.valid?("not a date")).to be(false)
   end
 
   it "keeps format as an annotation by default" do
@@ -88,7 +103,7 @@ RSpec.describe JsonSchemaValidator do
   end
 
   it "supports format assertions with a reusable validator", :aggregate_failures do
-    validator = described_class::Validator.new(described_class.compile("format" => "date-time"), format: true)
+    validator = described_class.compile({"format" => "date-time"}, format: true)
 
     expect(validator.valid?("1963-06-19T08:30:06Z")).to be(true)
     expect(validator.valid?("1963-06-19 08:30:06Z")).to be(false)
@@ -96,7 +111,7 @@ RSpec.describe JsonSchemaValidator do
 
   it "resolves the format when compiling a reusable validator", :aggregate_failures do
     schema = {"format" => "date"}
-    validator = described_class::Validator.new(described_class.compile(schema), format: true)
+    validator = described_class.compile(schema, format: true)
     schema["format"] = "unknown"
 
     expect(validator.valid?("2020-02-29")).to be(true)

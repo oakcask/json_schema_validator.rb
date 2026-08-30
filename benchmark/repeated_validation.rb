@@ -71,9 +71,8 @@ documents = documents_with_expected.map(&:first)
 expected = documents_with_expected.map(&:last)
 
 registry = JsonSchemaValidator::SchemaRegistry.new
-compiled_schema = registry.compile(schema)
 validators = {
-  "json_schema_validator" => JsonSchemaValidator::Validator.new(compiled_schema),
+  "json_schema_validator" => registry.compile(schema),
   "json_schemer" => JSONSchemer.schema(
     schema,
     meta_schema: JSONSchemer.draft202012,

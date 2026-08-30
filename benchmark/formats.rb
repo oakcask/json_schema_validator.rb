@@ -54,7 +54,7 @@ end
 adapters = {
   "json_schema_validator" => {
     build: lambda { |schema|
-      JsonSchemaValidator::Validator.new(JsonSchemaValidator.compile(schema), format: true)
+      JsonSchemaValidator.compile(schema, format: true)
     },
     valid: ->(validator, data) { validator.valid?(data) }
   },
