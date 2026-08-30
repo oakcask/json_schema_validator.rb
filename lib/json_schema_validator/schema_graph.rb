@@ -73,7 +73,7 @@ module JsonSchemaValidator
       end
 
       def dynamic_anchor(resource, name)
-        @dynamic_anchors[[resource, name]]
+        @dynamic_anchors.dig(resource, name)
       end
 
       def dynamic_scope?
@@ -172,7 +172,7 @@ module JsonSchemaValidator
         )
         nodes << node
         if @nodes_by_document_location
-          @nodes_by_document_location[[document_key, schema_path]] = node
+          (@nodes_by_document_location[document_key] ||= {})[schema_path] = node
         end
 
         if hash_schema && schema.key?("$id") && !exclusive_ref && !base.empty?
@@ -225,14 +225,14 @@ module JsonSchemaValidator
         return unless name.is_a?(String) && !name.empty?
 
         uri_registry["#{resource.uri}##{name}"] = node
-        @dynamic_anchors[[resource, name]] = node if dynamic
+        (@dynamic_anchors[resource] ||= {})[name] = node if dynamic
       end
 
       private def node_by_document_location(document_key, schema_path)
-        locations = (@nodes_by_document_location ||= nodes.to_h do |node|
-          [[node.document_key, node.schema_path], node]
+        locations = (@nodes_by_document_location ||= nodes.each_with_object({}) do |node, result|
+          (result[node.document_key] ||= {})[node.schema_path] = node
         end)
-        locations[[document_key, schema_path]]
+        locations.dig(document_key, schema_path)
       end
 
       private def index_external(document_uri, fallback_dialect)

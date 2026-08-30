@@ -108,9 +108,11 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
     let(:schema) do
       {
         "$id" => "https://example.test/root",
+        "$dynamicAnchor" => "item",
         "definitions" => {
           "nested" => {
             "$id" => "folder/",
+            "$dynamicAnchor" => "item",
             "definitions" => {"value" => {"$ref" => "target"}}
           }
         }
@@ -120,6 +122,12 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
     it "preserves the resource base when reached through a parent pointer" do
       target = graph.resolve(graph.root, "#/definitions/nested/definitions/value")
       expect(target.base_uri).to eq("https://example.test/folder/")
+    end
+
+    it "keeps same-named dynamic anchors separate by resource", :aggregate_failures do
+      nested = graph.root.child("definitions", "nested")
+      expect(graph.dynamic_anchor(graph.root.resource, "item")).to equal(graph.root)
+      expect(graph.dynamic_anchor(nested.resource, "item")).to equal(nested)
     end
   end
 
@@ -175,6 +183,14 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
       it "keeps anonymous documents and their local references separate" do
         first = graph.compile({"$ref" => "#/$defs/value", "$defs" => {"value" => {"const" => 1}}})
         second = graph.compile({"$ref" => "#/$defs/value", "$defs" => {"value" => {"const" => 2}}})
+
+        constants = [first, second].map { |root| graph.resolve(root, root.schema["$ref"]).schema["const"] }
+        expect(constants).to eq([1, 2])
+      end
+
+      it "indexes lazily materialized nodes in separate anonymous documents" do
+        first = graph.compile({"$ref" => "#/extension", "extension" => {"const" => 1}})
+        second = graph.compile({"$ref" => "#/extension", "extension" => {"const" => 2}})
 
         constants = [first, second].map { |root| graph.resolve(root, root.schema["$ref"]).schema["const"] }
         expect(constants).to eq([1, 2])
