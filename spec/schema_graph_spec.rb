@@ -55,6 +55,54 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
     end
   end
 
+  describe "failed compilation" do
+    subject(:graph) { graph_class.new(dialect: assertion_dialect) }
+
+    let(:assertion_dialect) do
+      dialect_class.new(
+        name: :format_assertion,
+        uri: "https://example.test/dialect/format-assertion",
+        keywords: draft7.keywords,
+        ref_siblings: draft7.ref_siblings?,
+        format_assertion: true
+      )
+    end
+
+    def graph_state(graph)
+      {
+        resources: graph.resources.dup,
+        resource_nodes: graph.resources.transform_values { |resource| resource.nodes.dup },
+        uri_registry: graph.uri_registry.dup,
+        nodes: graph.nodes.dup,
+        dynamic_scope: graph.dynamic_scope?
+      }
+    end
+
+    it "leaves the graph unchanged when a nested schema raises", :aggregate_failures do
+      existing = graph.compile({
+        "$id" => "https://example.test/existing",
+        "definitions" => {"value" => {"type" => "integer"}}
+      })
+      state_before = graph_state(graph)
+      collections_before = [graph.resources, graph.uri_registry, graph.nodes, existing.resource.nodes]
+      failing_schema = {
+        "$id" => "https://example.test/existing",
+        "$dynamicRef" => "#value",
+        "definitions" => {
+          "added" => {"$anchor" => "added", "type" => "string"},
+          "invalid" => {"format" => "unknown"}
+        }
+      }
+
+      expect { graph.compile(failing_schema) }
+        .to raise_error(JsonSchemaValidator::UnsupportedFormatError, /unsupported format "unknown"/)
+      expect(graph_state(graph)).to eq(state_before)
+      expect([graph.resources, graph.uri_registry, graph.nodes, existing.resource.nodes])
+        .to match(collections_before.map { |collection| equal(collection) })
+      expect(graph.node_at("https://example.test/existing")).to equal(existing)
+    end
+  end
+
   describe "$ref sibling policies" do
     let(:reference) { "#/definitions/value" }
     let(:definitions) { {"value" => {"type" => "integer"}} }
