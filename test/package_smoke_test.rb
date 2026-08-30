@@ -1,0 +1,65 @@
+# frozen_string_literal: true
+
+require "json_schema_validator"
+
+schema = {
+  "$schema" => "https://json-schema.org/draft/2020-12/schema",
+  "type" => "object",
+  "properties" => {
+    "order_id" => {"type" => "string", "pattern" => "^ord_[0-9]{6}$"},
+    "customer" => {"$ref" => "#/$defs/customer"},
+    "items" => {
+      "type" => "array",
+      "minItems" => 1,
+      "items" => {"$ref" => "#/$defs/line_item"}
+    },
+    "created_at" => {"type" => "string", "format" => "date-time"}
+  },
+  "required" => %w[order_id customer items created_at],
+  "additionalProperties" => false,
+  "$defs" => {
+    "customer" => {
+      "type" => "object",
+      "properties" => {
+        "id" => {"type" => "integer", "minimum" => 1},
+        "name" => {"type" => "string", "minLength" => 1},
+        "tier" => {"enum" => %w[standard premium]}
+      },
+      "required" => %w[id name],
+      "additionalProperties" => false
+    },
+    "line_item" => {
+      "type" => "object",
+      "properties" => {
+        "sku" => {"type" => "string", "pattern" => "^SKU-[A-Z0-9]{8}$"},
+        "quantity" => {"type" => "integer", "minimum" => 1},
+        "unit_price" => {"type" => "number", "minimum" => 0}
+      },
+      "required" => %w[sku quantity unit_price],
+      "additionalProperties" => false
+    }
+  }
+}
+
+order = {
+  "order_id" => "ord_123456",
+  "customer" => {"id" => 42, "name" => "Ada Lovelace", "tier" => "premium"},
+  "items" => [
+    {"sku" => "SKU-ABC12345", "quantity" => 2, "unit_price" => 19.95}
+  ],
+  "created_at" => "2026-08-31T10:15:00+09:00"
+}
+
+validator = JsonSchemaValidator.compile(schema, format: true)
+abort "expected the order to be valid" unless validator.valid?(order)
+
+invalid_order = order.merge(
+  "items" => [order.fetch("items").first.merge("quantity" => 0)]
+)
+result = validator.validate(invalid_order)
+quantity_error = result.errors.any? do |error|
+  error.keyword == "minimum" && error.instance_path == "/items/0/quantity"
+end
+abort "expected an invalid quantity error" unless quantity_error
+
+puts "Installed gem validated the sample order"
