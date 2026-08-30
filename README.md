@@ -64,6 +64,27 @@ Draft 2019-09 and Draft 2020-12 support their dialect-specific keywords, includi
 `minContains`, `maxContains`, and the `unevaluated*` applicators. Enable optional
 validation for `contentEncoding` and `contentMediaType` with `content: true`.
 
+## JSON Schema conformance
+
+| Capability | Draft 7 | Draft 2019-09 | Draft 2020-12 |
+| --- | --- | --- | --- |
+| Required JSON-Schema-Test-Suite cases | Supported | Supported | Supported |
+| Dialect-specific references | `$ref` | `$ref`, `$recursiveRef` | `$ref`, `$dynamicRef` |
+| `unevaluatedItems` / `unevaluatedProperties` | Not applicable | Supported | Supported |
+| `contentEncoding` / `contentMediaType` assertions | Opt-in[^content] | Opt-in[^content] | Opt-in[^content] |
+| `format` behavior in the standard dialect | Annotation only | Annotation only | Annotation only[^format] |
+
+The required-suite row covers every required case for the listed dialect in the
+[official JSON Schema Test Suite](https://github.com/json-schema-org/JSON-Schema-Test-Suite).
+The applicable top-level optional cases are also tested, including arbitrary
+precision numbers, ECMA-262 regular expressions, anchors, cross-draft references,
+and dynamic references.
+
+[^content]: Pass `content: true` to assert Base64 `contentEncoding` and JSON
+    `contentMediaType`. Other encodings and media types remain annotations.
+[^format]: A custom Draft 2020-12 meta-schema that declares the Format-Assertion
+    vocabulary can assert the `ipv4` format. Other formats remain annotations.
+
 Run the test suite with:
 
 ```sh
