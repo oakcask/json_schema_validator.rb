@@ -201,7 +201,7 @@ module JsonSchemaValidator
             resource,
             document_key
           )
-          node.add_child(segments, child)
+          node.add_child(*segments, child: child)
         end
         node.freeze
       end

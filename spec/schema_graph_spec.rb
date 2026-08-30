@@ -34,8 +34,8 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
 
     it "describes keyword masks and subschema locations", :aggregate_failures do
       expect(graph.root.keyword_mask).to eq(65)
-      expect(graph.root.children.keys).to contain_exactly(["properties", "x/y"], ["dependencies", "z"])
-      expect(graph.root.child(["properties", "x/y"]).schema_path).to eq("/properties/x~1y")
+      expect(graph.root.child("properties", "x/y").schema_path).to eq("/properties/x~1y")
+      expect(graph.root.child("dependencies", "z").schema_path).to eq("/dependencies/z")
     end
   end
 
@@ -43,8 +43,8 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
     subject(:graph) { graph_class.new({"allOf" => [reused, reused]}) }
 
     let(:reused) { {"type" => "integer"} }
-    let(:first) { graph.root.child(["allOf", 0]) }
-    let(:second) { graph.root.child(["allOf", 1]) }
+    let(:first) { graph.root.child("allOf", 0) }
+    let(:second) { graph.root.child("allOf", 1) }
 
     it "creates a node for each occurrence", :aggregate_failures do
       expect(first).not_to equal(second)
@@ -76,7 +76,7 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
     it "uses the Draft 7 exclusive policy", :aggregate_failures do
       graph = graph_class.new({"$ref" => reference, "definitions" => definitions})
       expect(draft7.ref_siblings?).to be(false)
-      expect(graph.root.children).to be_empty
+      expect(graph.root.child("definitions", "value")).to be_nil
     end
 
     it "uses the policy of a declared dialect" do
@@ -188,7 +188,7 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
     let(:target) { graph.resolve(graph.root, "#/extension") }
 
     it "materializes a referenced target on demand", :aggregate_failures do
-      expect(graph.root.children).to be_empty
+      expect(graph.root.child("extension")).to be_nil
       expect(target.schema).to eq("type" => "integer")
       expect(target.schema_path).to eq("/extension")
     end
