@@ -103,6 +103,17 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
     end
   end
 
+  describe "dynamic scope tracking" do
+    it "remains enabled after a compiled schema requires it" do
+      graph = graph_class.new
+
+      graph.compile({"$dynamicRef" => "#item"})
+      graph.compile(true)
+
+      expect(graph).to be_dynamic_scope
+    end
+  end
+
   describe "$ref sibling policies" do
     let(:reference) { "#/definitions/value" }
     let(:definitions) { {"value" => {"type" => "integer"}} }

@@ -53,6 +53,8 @@ module JsonSchemaValidator
         @dynamic_anchors = {}
         # External schemas are indexed lazily, so their references are not yet
         # available to compile_node. Track conservatively from the caller.
+        # Once required, dynamic scope tracking must remain enabled because all
+        # evaluators sharing this graph may reach the dynamic reference.
         @dynamic_scope = !schemas.empty?
         @default_dialect = dialect
       end
@@ -90,7 +92,7 @@ module JsonSchemaValidator
           document_locations: [],
           dynamic_anchors: {},
           custom_dialects: {},
-          dynamic_scope: @dynamic_scope
+          requires_dynamic_scope: false
         }
       end
 
@@ -117,7 +119,7 @@ module JsonSchemaValidator
           (@dynamic_anchors[resource] ||= {}).update(anchors)
         end
         (@custom_dialects ||= {}).update(changes[:custom_dialects]) unless changes[:custom_dialects].empty?
-        @dynamic_scope = changes[:dynamic_scope]
+        @dynamic_scope = true if changes[:requires_dynamic_scope]
       end
 
       private def resolve_uncached(node, reference)
@@ -186,7 +188,7 @@ module JsonSchemaValidator
       private def compile_node(schema, inherited_base, dialect, schema_path, resource_path, resource, document_key, changes)
         hash_schema = schema.is_a?(Hash)
         if hash_schema && (schema.key?("$recursiveRef") || schema.key?("$dynamicRef"))
-          changes[:dynamic_scope] = true
+          changes[:requires_dynamic_scope] = true
         end
         dialect = dialect_for(schema, dialect, changes) if hash_schema && schema.key?("$schema")
         if hash_schema && dialect.format_assertion? && schema.key?("format") &&
