@@ -146,6 +146,11 @@ module JsonSchemaValidator
           @dynamic_scope = true
         end
         dialect = dialect_for(schema, dialect) if hash_schema && schema.key?("$schema")
+        if hash_schema && dialect.format_assertion? && schema.key?("format") &&
+            Formats.resolve(schema["format"]).name.nil?
+          raise UnsupportedFormatError,
+            "unsupported format #{schema["format"].inspect} required by Format-Assertion vocabulary"
+        end
         exclusive_ref = hash_schema && schema.key?("$ref") && !dialect.ref_siblings?
         base = if hash_schema && !exclusive_ref && schema.key?("$id")
           absolute_uri(inherited_base, schema["$id"])

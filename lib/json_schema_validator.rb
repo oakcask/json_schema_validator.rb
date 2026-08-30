@@ -7,9 +7,11 @@ require_relative "json_schema_validator/formats"
 require_relative "json_schema_validator/schema_graph"
 
 module JsonSchemaValidator
-  class ResolutionError < StandardError; end
+  class Error < StandardError; end
+  class ResolutionError < Error; end
+  class UnsupportedFormatError < Error; end
 
-  Error = Data.define(:keyword, :instance_path, :schema_path, :message) do
+  ValidationError = Data.define(:keyword, :instance_path, :schema_path, :message) do
     def to_h
       {keyword: keyword, instance_path: instance_path, schema_path: schema_path, message: message}
     end
@@ -847,7 +849,7 @@ module JsonSchemaValidator
 
       private def add_error(keyword, instance_path, schema_path, message)
         @error_count += 1
-        @errors << Error.new(keyword: keyword, instance_path: instance_path, schema_path: schema_path, message: message) if @errors
+        @errors << ValidationError.new(keyword: keyword, instance_path: instance_path, schema_path: schema_path, message: message) if @errors
         false
       end
 
