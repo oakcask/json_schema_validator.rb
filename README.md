@@ -74,7 +74,7 @@ Enable validation of the supported `date`, `time`, and `date-time` formats with
 | Dialect-specific references | `$ref` | `$ref`, `$recursiveRef` | `$ref`, `$dynamicRef` |
 | `unevaluatedItems` / `unevaluatedProperties` | Not applicable | Supported | Supported |
 | `contentEncoding` / `contentMediaType` assertions | Opt-in[^content] | Opt-in[^content] | Opt-in[^content] |
-| `format` behavior in the standard dialect | Annotation or opt-in assertion[^format] | Annotation or opt-in assertion[^format] | Annotation or opt-in assertion[^format] |
+| `format` behavior in the standard dialect | Annotation or partial opt-in assertion[^format] | Annotation or partial opt-in assertion[^format] | Annotation or partial opt-in assertion[^format] |
 
 The required-suite row covers every required case for the listed dialect in the
 [official JSON Schema Test Suite](https://github.com/json-schema-org/JSON-Schema-Test-Suite).
