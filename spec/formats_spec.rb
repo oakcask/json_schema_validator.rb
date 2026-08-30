@@ -10,7 +10,7 @@ RSpec.describe "JsonSchemaValidator::Internal::Formats" do
   def expect_cases(format, cases)
     format = formats.resolve(format)
     cases.each do |value, expected|
-      expect(formats.valid?(format, value)).to eq(expected), -> { "expected #{value.inspect} to be #{expected ? "valid" : "invalid"}" }
+      expect(format.call(value)).to eq(expected), -> { "expected #{value.inspect} to be #{expected ? "valid" : "invalid"}" }
     end
   end
 
@@ -211,12 +211,12 @@ RSpec.describe "JsonSchemaValidator::Internal::Formats" do
     end
   end
 
-  describe "dispatch" do
+  describe "call" do
     it "preserves supported IPv4 and unknown-format behavior", :aggregate_failures do
       ipv4 = formats.resolve("ipv4")
-      expect(formats.valid?(ipv4, "192.0.2.1")).to be(true)
-      expect(formats.valid?(ipv4, "999.0.2.1")).to be(false)
-      expect(formats.valid?(formats.resolve("unknown"), "anything")).to be(true)
+      expect(ipv4.call("192.0.2.1")).to be(true)
+      expect(ipv4.call("999.0.2.1")).to be(false)
+      expect(formats.resolve("unknown").call("anything")).to be(true)
     end
 
     it "resolves each format to a singleton descriptor", :aggregate_failures do
