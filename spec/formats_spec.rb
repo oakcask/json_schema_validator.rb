@@ -157,6 +157,60 @@ RSpec.describe "JsonSchemaValidator::Internal::Formats" do
     it("requires the complete date-time grammar", :aggregate_failures) { expect_cases("date-time", invalid_date_time_grammar) }
   end
 
+  describe "duration" do
+    let(:duration_cases) do
+      {
+        "P4Y" => true, "P1Y2M3DT4H5M6S" => true, "PT36H" => true,
+        "P2W" => true, "P01D" => true, "P" => false, "PT" => false,
+        "PT1D" => false, "P1Y2D" => false, "PT1H2S" => false,
+        "P1WT1H" => false, "PT0.5S" => false
+      }
+    end
+
+    it("implements the RFC 3339 duration grammar", :aggregate_failures) { expect_cases("duration", duration_cases) }
+  end
+
+  describe "uuid" do
+    let(:uuid_cases) do
+      {
+        "2eb8aa08-aa98-11ea-b4aa-73b441d16380" => true,
+        "2EB8AA08-AA98-11EA-B4AA-73B441D16380" => true,
+        "00000000-0000-0000-0000-000000000000" => true,
+        "2eb8aa08-aa98-11ea-b4ga-73b441d16380" => false,
+        "2eb8aa08aa9811eab4aa73b441d16380" => false,
+        "urn:uuid:2eb8aa08-aa98-11ea-b4aa-73b441d16380" => false
+      }
+    end
+
+    it("accepts the canonical hexadecimal representation", :aggregate_failures) { expect_cases("uuid", uuid_cases) }
+  end
+
+  describe "json-pointer" do
+    let(:json_pointer_cases) do
+      {
+        "" => true, "/foo//bar/~0~1" => true, "/foo/😎" => true,
+        "/foo\0bar\n" => true, "foo/bar" => false, "#/foo" => false,
+        "/foo/~2" => false, "/foo/~" => false
+      }
+    end
+
+    it("validates pointer starts and tilde escapes", :aggregate_failures) { expect_cases("json-pointer", json_pointer_cases) }
+  end
+
+  describe "relative-json-pointer" do
+    let(:relative_json_pointer_cases) do
+      {
+        "1" => true, "0/foo/bar" => true, "120/foo//bar" => true,
+        "0#" => true, "" => false, "01/a" => false, "+1/a" => false,
+        "0##" => false, "1#/foo" => false, "0/~2" => false
+      }
+    end
+
+    it("validates the non-negative prefix and pointer suffix", :aggregate_failures) do
+      expect_cases("relative-json-pointer", relative_json_pointer_cases)
+    end
+  end
+
   describe "dispatch" do
     it "preserves supported IPv4 and unknown-format behavior", :aggregate_failures do
       ipv4 = formats.resolve("ipv4")
@@ -167,6 +221,7 @@ RSpec.describe "JsonSchemaValidator::Internal::Formats" do
 
     it "resolves each format to a singleton descriptor", :aggregate_failures do
       expect(formats.resolve("date")).to equal(formats.resolve("date"))
+      expect(formats.resolve("uuid")).to equal(formats.resolve("uuid"))
       expect(formats.resolve("unknown-a")).to equal(formats.resolve("unknown-b"))
     end
   end
