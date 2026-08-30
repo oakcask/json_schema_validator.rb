@@ -5,11 +5,13 @@ require "ipaddr"
 module JsonSchemaValidator
   module Internal
     module Formats
-      UNKNOWN = 0
-      DATE = 1
-      TIME = 2
-      DATE_TIME = 3
-      IPV4 = 4
+      Format = Data.define(:name)
+
+      UNKNOWN = Format.new(nil)
+      DATE = Format.new("date")
+      TIME = Format.new("time")
+      DATE_TIME = Format.new("date-time")
+      IPV4 = Format.new("ipv4")
 
       class << self
         def resolve(format)
@@ -23,16 +25,16 @@ module JsonSchemaValidator
         end
 
         def valid?(format, value)
-          valid_kind?(resolve(format), value)
-        end
-
-        def valid_kind?(kind, value)
-          case kind
-          when DATE then valid_date?(value)
-          when TIME then valid_time?(value)
-          when DATE_TIME then valid_date_time?(value)
-          when IPV4 then IPAddr.new(value).ipv4?
-          else true
+          if format.equal?(DATE)
+            valid_date?(value)
+          elsif format.equal?(TIME)
+            valid_time?(value)
+          elsif format.equal?(DATE_TIME)
+            valid_date_time?(value)
+          elsif format.equal?(IPV4)
+            IPAddr.new(value).ipv4?
+          else
+            true
           end
         rescue IPAddr::InvalidAddressError
           false
@@ -127,7 +129,7 @@ module JsonSchemaValidator
         end
       end
 
-      private_constant :UNKNOWN, :DATE, :TIME, :DATE_TIME, :IPV4
+      private_constant :Format, :UNKNOWN, :DATE, :TIME, :DATE_TIME, :IPV4
     end
   end
 
