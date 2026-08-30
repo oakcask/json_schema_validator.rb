@@ -5,7 +5,7 @@ require_relative "spec_helper"
 RSpec.describe "JSON Schema Draft 2020-12 official suite" do
   suite_root = File.expand_path("../references/JSON-Schema-Test-Suite", __dir__)
   let(:remotes) do
-    remote_root = File.join(suite_root, "remotes")
+    remote_root = File.expand_path("../references/JSON-Schema-Test-Suite/remotes", __dir__)
     Dir[File.join(remote_root, "**", "*.json")].to_h do |file|
       relative = file.delete_prefix("#{remote_root}/")
       ["http://localhost:1234/#{relative}", JSON.parse(File.read(file))]
