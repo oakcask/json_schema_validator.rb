@@ -29,17 +29,7 @@ module JsonSchemaValidator
     alias_method :success?, :valid?
   end
 
-  class CompiledSchema
-    def initialize(graph, root)
-      @graph = graph
-      @root = root
-      freeze
-    end
-
-    attr_reader :graph, :root
-    private :graph, :root
-    private_class_method :new
-  end
+  CompiledSchema = Data.define(:graph, :root)
 
   class SchemaRegistry
     UNDEFINED_SCHEMA = Object.new.freeze
@@ -59,7 +49,7 @@ module JsonSchemaValidator
       end
 
       root = @graph.compile(schema, base_uri: base_uri)
-      CompiledSchema.send(:new, @graph, root)
+      CompiledSchema.new(@graph, root)
     end
   end
 
