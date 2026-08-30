@@ -58,11 +58,10 @@ module JsonSchemaValidator
       end
 
       def compile(schema, base_uri: nil, dialect: @default_dialect)
-        changes = compilation_changes
-        root_dialect = dialect_for(schema, dialect, changes)
-        root = compile_document(schema, base_uri.to_s, root_dialect, changes)
-        commit(changes)
-        root
+        compile_atomically do |changes|
+          root_dialect = dialect_for(schema, dialect, changes)
+          compile_document(schema, base_uri.to_s, root_dialect, changes)
+        end
       end
 
       def resolve(node, reference)
@@ -93,6 +92,13 @@ module JsonSchemaValidator
           custom_dialects: {},
           dynamic_scope: @dynamic_scope
         }
+      end
+
+      private def compile_atomically
+        changes = compilation_changes
+        result = yield changes
+        commit(changes)
+        result
       end
 
       private def commit(changes)
@@ -147,19 +153,18 @@ module JsonSchemaValidator
         end
 
         target = pointer_target(resource.root.schema, pointer)
-        changes = compilation_changes
-        target = compile_node(
-          target,
-          resource.root.base_uri,
-          resource.root.dialect,
-          schema_path,
-          pointer,
-          resource,
-          resource.root.document_key,
-          changes
-        )
-        commit(changes)
-        target
+        compile_atomically do |changes|
+          compile_node(
+            target,
+            resource.root.base_uri,
+            resource.root.dialect,
+            schema_path,
+            pointer,
+            resource,
+            resource.root.document_key,
+            changes
+          )
+        end
       rescue URI::Error
         raise ResolutionError, "unresolvable reference #{reference.inspect}"
       end
@@ -168,16 +173,13 @@ module JsonSchemaValidator
         uri_registry[uri.to_s]
       end
 
-      private def compile_document(schema, retrieval_uri, dialect, changes = nil)
-        own_changes = changes.nil?
-        changes ||= compilation_changes
+      private def compile_document(schema, retrieval_uri, dialect, changes)
         document_key = retrieval_uri.empty? ? Object.new : retrieval_uri
         root = compile_node(schema, retrieval_uri, dialect, "", "", nil, document_key, changes)
         document_uri = strip_fragment(retrieval_uri)
         register_resource(document_uri, root, changes) unless document_uri.empty? || resource_at(document_uri, changes)
         register_uri_unless_present(retrieval_uri, root, changes) unless retrieval_uri.empty?
         register_uri_unless_present(document_uri, root, changes) unless document_uri.empty?
-        commit(changes) if own_changes
         root
       end
 
@@ -299,16 +301,18 @@ module JsonSchemaValidator
         return if @indexed_external_schemas&.[](document_uri)
 
         if (dialect = Dialect.resolve(document_uri)) && (meta_schema = MetaSchemas.resolve(document_uri))
-          compile_document(meta_schema, dialect.uri, dialect)
+          compile_atomically do |changes|
+            compile_document(meta_schema, dialect.uri, dialect, changes)
+          end
           (@indexed_external_schemas ||= {})[document_uri] = true
           return
         end
         if @external_schemas.key?(document_uri)
           external_schema = @external_schemas[document_uri]
-          changes = compilation_changes
-          dialect = dialect_for(external_schema, fallback_dialect, changes)
-          compile_document(external_schema, document_uri, dialect, changes)
-          commit(changes)
+          compile_atomically do |changes|
+            dialect = dialect_for(external_schema, fallback_dialect, changes)
+            compile_document(external_schema, document_uri, dialect, changes)
+          end
           (@indexed_external_schemas ||= {})[document_uri] = true
           return
         end
@@ -316,13 +320,13 @@ module JsonSchemaValidator
         matches = @external_schemas.select do |external_uri, _schema|
           strip_fragment(external_uri.to_s) == document_uri
         end
-        changes = compilation_changes
-        matches.each do |external_uri, external_schema|
-          external_uri = external_uri.to_s
-          dialect = dialect_for(external_schema, fallback_dialect, changes)
-          compile_document(external_schema, external_uri, dialect, changes)
+        compile_atomically do |changes|
+          matches.each do |external_uri, external_schema|
+            external_uri = external_uri.to_s
+            dialect = dialect_for(external_schema, fallback_dialect, changes)
+            compile_document(external_schema, external_uri, dialect, changes)
+          end
         end
-        commit(changes)
         (@indexed_external_schemas ||= {})[document_uri] = true
       end
 
