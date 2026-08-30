@@ -21,7 +21,9 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
   end
 
   describe "Draft 7 compilation" do
-    subject(:graph) { graph_class.new(schema) }
+    subject(:graph) { graph_class.new }
+
+    let(:root) { graph.compile(schema) }
 
     let(:schema) do
       {
@@ -33,18 +35,19 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
     end
 
     it "describes keyword masks and subschema locations", :aggregate_failures do
-      expect(graph.root.keyword_mask).to eq(65)
-      expect(graph.root.child("properties", "x/y").schema_path).to eq("/properties/x~1y")
-      expect(graph.root.child("dependencies", "z").schema_path).to eq("/dependencies/z")
+      expect(root.keyword_mask).to eq(65)
+      expect(root.child("properties", "x/y").schema_path).to eq("/properties/x~1y")
+      expect(root.child("dependencies", "z").schema_path).to eq("/dependencies/z")
     end
   end
 
   describe "schema occurrences" do
-    subject(:graph) { graph_class.new({"allOf" => [reused, reused]}) }
+    subject(:graph) { graph_class.new }
 
     let(:reused) { {"type" => "integer"} }
-    let(:first) { graph.root.child("allOf", 0) }
-    let(:second) { graph.root.child("allOf", 1) }
+    let(:root) { graph.compile({"allOf" => [reused, reused]}) }
+    let(:first) { root.child("allOf", 0) }
+    let(:second) { root.child("allOf", 1) }
 
     it "creates a node for each occurrence", :aggregate_failures do
       expect(first).not_to equal(second)
@@ -74,9 +77,10 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
     end
 
     it "uses the Draft 7 exclusive policy", :aggregate_failures do
-      graph = graph_class.new({"$ref" => reference, "definitions" => definitions})
+      graph = graph_class.new
+      root = graph.compile({"$ref" => reference, "definitions" => definitions})
       expect(draft7.ref_siblings?).to be(false)
-      expect(graph.root.child("definitions", "value")).to be_nil
+      expect(root.child("definitions", "value")).to be_nil
     end
 
     it "uses the policy of a declared dialect" do
@@ -86,7 +90,7 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
   end
 
   describe "local references" do
-    subject(:graph) { graph_class.new(schema) }
+    subject(:graph) { graph_class.new }
 
     let(:schema) do
       {
@@ -94,16 +98,17 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
         "definitions" => {"a/b" => {"$id" => "named", "type" => "integer"}}
       }
     end
-    let(:escaped) { graph.resolve(graph.root, "#/definitions/a~1b") }
+    let(:root) { graph.compile(schema) }
+    let(:escaped) { graph.resolve(root, "#/definitions/a~1b") }
 
     it "resolves escaped pointers and identifiers", :aggregate_failures do
       expect(escaped.schema["type"]).to eq("integer")
-      expect(graph.resolve(graph.root, "named")).to equal(escaped)
+      expect(graph.resolve(root, "named")).to equal(escaped)
     end
   end
 
   describe "nested resources" do
-    subject(:graph) { graph_class.new(schema) }
+    subject(:graph) { graph_class.new }
 
     let(:schema) do
       {
@@ -119,14 +124,16 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
       }
     end
 
+    let(:root) { graph.compile(schema) }
+
     it "preserves the resource base when reached through a parent pointer" do
-      target = graph.resolve(graph.root, "#/definitions/nested/definitions/value")
+      target = graph.resolve(root, "#/definitions/nested/definitions/value")
       expect(target.base_uri).to eq("https://example.test/folder/")
     end
 
     it "keeps same-named dynamic anchors separate by resource", :aggregate_failures do
-      nested = graph.root.child("definitions", "nested")
-      expect(graph.dynamic_anchor(graph.root.resource, "item")).to equal(graph.root)
+      nested = root.child("definitions", "nested")
+      expect(graph.dynamic_anchor(root.resource, "item")).to equal(root)
       expect(graph.dynamic_anchor(nested.resource, "item")).to equal(nested)
     end
   end
@@ -135,14 +142,12 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
     context "with one external schema" do
       let(:external) { {"definitions" => {"value" => {"type" => "string"}}} }
       let(:graph) do
-        graph_class.new(
-          {"$ref" => "https://example.test/external#/definitions/value"},
-          schemas: {"https://example.test/external" => external}
-        )
+        graph_class.new(schemas: {"https://example.test/external" => external})
       end
+      let(:root) { graph.compile({"$ref" => "https://example.test/external#/definitions/value"}) }
 
       it "indexes it lazily with its retrieval URI", :aggregate_failures do
-        target = graph.resolve(graph.root, graph.root.schema["$ref"])
+        target = graph.resolve(root, root.schema["$ref"])
         expect(target.schema).to eq("type" => "string")
         expect(target.schema_path).to eq("/definitions/value")
       end
@@ -150,16 +155,14 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
 
     context "with two external schemas" do
       let(:graph) do
-        graph_class.new(
-          true,
-          schemas: {
-            "https://example.test/one" => {"definitions" => {"value" => {"const" => 1}}},
-            "https://example.test/two" => {"definitions" => {"value" => {"const" => 2}}}
-          }
-        )
+        graph_class.new(schemas: {
+          "https://example.test/one" => {"definitions" => {"value" => {"const" => 1}}},
+          "https://example.test/two" => {"definitions" => {"value" => {"const" => 2}}}
+        })
       end
-      let(:one) { graph.resolve(graph.root, "https://example.test/one#/definitions/value") }
-      let(:two) { graph.resolve(graph.root, "https://example.test/two#/definitions/value") }
+      let(:root) { graph.compile(true) }
+      let(:one) { graph.resolve(root, "https://example.test/one#/definitions/value") }
+      let(:two) { graph.resolve(root, "https://example.test/two#/definitions/value") }
 
       it "keeps identical pointers in separate resources" do
         expect([one.schema["const"], two.schema["const"]]).to eq([1, 2])
@@ -199,12 +202,13 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
   end
 
   describe "unknown keywords" do
-    subject(:graph) { graph_class.new({"extension" => {"type" => "integer"}}) }
+    subject(:graph) { graph_class.new }
 
-    let(:target) { graph.resolve(graph.root, "#/extension") }
+    let(:root) { graph.compile({"extension" => {"type" => "integer"}}) }
+    let(:target) { graph.resolve(root, "#/extension") }
 
     it "materializes a referenced target on demand", :aggregate_failures do
-      expect(graph.root.child("extension")).to be_nil
+      expect(root.child("extension")).to be_nil
       expect(target.schema).to eq("type" => "integer")
       expect(target.schema_path).to eq("/extension")
     end
