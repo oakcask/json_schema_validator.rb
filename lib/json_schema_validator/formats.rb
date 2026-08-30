@@ -9,7 +9,11 @@ module JsonSchemaValidator
       DATE = Format.new("date")
       TIME = Format.new("time")
       DATE_TIME = Format.new("date-time")
+      DURATION = Format.new("duration")
       IPV4 = Format.new("ipv4")
+      JSON_POINTER = Format.new("json-pointer")
+      RELATIVE_JSON_POINTER = Format.new("relative-json-pointer")
+      UUID = Format.new("uuid")
 
       class << self
         def resolve(format)
@@ -17,7 +21,11 @@ module JsonSchemaValidator
           when "date" then DATE
           when "time" then TIME
           when "date-time" then DATE_TIME
+          when "duration" then DURATION
           when "ipv4" then IPV4
+          when "json-pointer" then JSON_POINTER
+          when "relative-json-pointer" then RELATIVE_JSON_POINTER
+          when "uuid" then UUID
           else UNKNOWN
           end
         end
@@ -29,8 +37,16 @@ module JsonSchemaValidator
             valid_time?(value)
           elsif format.equal?(DATE_TIME)
             valid_date_time?(value)
+          elsif format.equal?(DURATION)
+            valid_duration?(value)
           elsif format.equal?(IPV4)
             valid_ipv4?(value)
+          elsif format.equal?(JSON_POINTER)
+            valid_json_pointer?(value)
+          elsif format.equal?(RELATIVE_JSON_POINTER)
+            valid_relative_json_pointer?(value)
+          elsif format.equal?(UUID)
+            valid_uuid?(value)
           else
             true
           end
@@ -144,6 +160,140 @@ module JsonSchemaValidator
           true
         end
 
+        private def valid_duration?(value)
+          length = value.bytesize
+          return false unless value.getbyte(0) == 80 && length > 1
+
+          index = 1
+          return valid_duration_time_at?(value, index + 1) if value.getbyte(index) == 84 # T
+
+          number_end = ascii_digits_end(value, index)
+          return false unless number_end
+
+          case value.getbyte(number_end)
+          when 87 # W
+            return number_end + 1 == length
+          when 89 # Y
+            index = number_end + 1
+            if (number_end = ascii_digits_end(value, index))
+              return false unless value.getbyte(number_end) == 77 # M
+
+              index = number_end + 1
+              if (number_end = ascii_digits_end(value, index))
+                return false unless value.getbyte(number_end) == 68 # D
+
+                index = number_end + 1
+              end
+            end
+          when 77 # M
+            index = number_end + 1
+            if (number_end = ascii_digits_end(value, index))
+              return false unless value.getbyte(number_end) == 68 # D
+
+              index = number_end + 1
+            end
+          when 68 # D
+            index = number_end + 1
+          else
+            return false
+          end
+
+          return true if index == length
+          return false unless value.getbyte(index) == 84 # T
+
+          valid_duration_time_at?(value, index + 1)
+        end
+
+        private def valid_duration_time_at?(value, index)
+          length = value.bytesize
+          number_end = ascii_digits_end(value, index)
+          return false unless number_end
+
+          case value.getbyte(number_end)
+          when 72 # H
+            index = number_end + 1
+            if (number_end = ascii_digits_end(value, index))
+              return false unless value.getbyte(number_end) == 77 # M
+
+              index = number_end + 1
+              if (number_end = ascii_digits_end(value, index))
+                return false unless value.getbyte(number_end) == 83 # S
+
+                index = number_end + 1
+              end
+            end
+          when 77 # M
+            index = number_end + 1
+            if (number_end = ascii_digits_end(value, index))
+              return false unless value.getbyte(number_end) == 83 # S
+
+              index = number_end + 1
+            end
+          when 83 # S
+            index = number_end + 1
+          else
+            return false
+          end
+
+          index == length
+        end
+
+        private def valid_json_pointer?(value)
+          valid_json_pointer_at?(value, 0)
+        end
+
+        private def valid_json_pointer_at?(value, index)
+          length = value.bytesize
+          return true if index == length
+          return false unless value.getbyte(index) == 47 # /
+
+          while index < length
+            if value.getbyte(index) == 126 # ~
+              index += 1
+              return false unless value.getbyte(index) == 48 || value.getbyte(index) == 49 # 0 or 1
+            end
+            index += 1
+          end
+
+          true
+        end
+
+        private def valid_relative_json_pointer?(value)
+          length = value.bytesize
+          first = value.getbyte(0)
+          return false unless first&.between?(48, 57)
+
+          index = 1
+          return false if first == 48 && value.getbyte(index)&.between?(48, 57)
+
+          index += 1 while value.getbyte(index)&.between?(48, 57)
+          return true if index == length
+          return index + 1 == length if value.getbyte(index) == 35 # #
+
+          valid_json_pointer_at?(value, index)
+        end
+
+        private def valid_uuid?(value)
+          return false unless value.bytesize == 36
+
+          36.times do |index|
+            byte = value.getbyte(index)
+            if index == 8 || index == 13 || index == 18 || index == 23
+              return false unless byte == 45 # -
+            else
+              return false unless byte&.between?(48, 57) || byte&.between?(65, 70) || byte&.between?(97, 102)
+            end
+          end
+
+          true
+        end
+
+        private def ascii_digits_end(value, index)
+          start = index
+          index += 1 while value.getbyte(index)&.between?(48, 57)
+          index unless index == start
+        end
+
         private def two_digits(value, start)
           tens = value.getbyte(start) - 48
           ones = value.getbyte(start + 1) - 48
@@ -157,7 +307,8 @@ module JsonSchemaValidator
         end
       end
 
-      private_constant :Format, :UNKNOWN, :DATE, :TIME, :DATE_TIME, :IPV4
+      private_constant :Format, :UNKNOWN, :DATE, :TIME, :DATE_TIME, :DURATION, :IPV4,
+        :JSON_POINTER, :RELATIVE_JSON_POINTER, :UUID
     end
   end
 
