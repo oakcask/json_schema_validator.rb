@@ -32,10 +32,34 @@ module JsonSchemaValidator
   class SchemaRegistry
     def initialize(schemas: {})
       @graph = Internal::SchemaGraph.new(schemas: schemas)
+      @shareable = false
     end
 
     def compile(schema, base_uri: nil, content: false, format: false)
+      raise Error, "cannot compile schemas after the registry is made shareable" if @shareable
+
       root = @graph.compile(schema, base_uri: base_uri)
+      Validator.new(@graph, root, content: content, format: format)
+    end
+
+    def make_shareable
+      return self if @shareable
+
+      @graph.make_shareable
+      @shareable = true
+      Ractor.make_shareable(self)
+    end
+
+    def shareable?
+      @shareable
+    end
+
+    def validator_for(uri, content: false, format: false)
+      raise Error, "make_shareable must be called before retrieving validators by URI" unless @shareable
+
+      root = @graph.node_at(uri)
+      raise ResolutionError, "unregistered schema URI #{uri.inspect}" unless root
+
       Validator.new(@graph, root, content: content, format: format)
     end
   end

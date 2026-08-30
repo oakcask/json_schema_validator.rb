@@ -111,6 +111,31 @@ validation for `contentEncoding` and `contentMediaType` with `content: true`.
 Enable optional format assertions with `format: true`; support for each format is
 listed separately below.
 
+### Thread / Ractor native feature
+
+To share a registry between threads or Ractors, finish registering schemas and
+make the registry shareable first. This eagerly compiles every registered
+schema, resolves all references, and makes the registry deeply immutable.
+
+```ruby
+registry = JsonSchemaValidator::SchemaRegistry.new(
+  schemas: {
+    "https://example.test/positive" => { "type" => "integer", "minimum" => 1 },
+    "https://example.test/value" => { "$ref" => "https://example.test/positive" }
+  }
+)
+registry.make_shareable
+
+# Each thread or Ractor creates and owns its validator.
+validator = registry.validator_for("https://example.test/value")
+```
+
+`make_shareable` calls `Ractor.make_shareable` internally. It raises a
+`ResolutionError` if a reference cannot be resolved. After it returns,
+`validator_for` is read-only and may be called concurrently, while `compile` is
+no longer available. A `Validator` contains per-validation mutable state and
+must not be shared between threads or Ractors.
+
 ## JSON Schema conformance
 
 | Capability | Draft 7 | Draft 2019-09 | Draft 2020-12 |
