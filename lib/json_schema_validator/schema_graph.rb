@@ -40,9 +40,9 @@ module JsonSchemaValidator
         private_constant :EMPTY_NODES
       end
 
-      attr_reader :root, :resources, :uri_registry, :nodes
+      attr_reader :resources, :uri_registry, :nodes
 
-      def initialize(schema = nil, schemas: {}, base_uri: nil, dialect: Dialect.resolve)
+      def initialize(schemas: {}, dialect: Dialect.resolve)
         @external_schemas = schemas.dup
         @indexed_external_schemas = nil
         @resources = {}
@@ -55,13 +55,11 @@ module JsonSchemaValidator
         # available to compile_node. Track conservatively from the caller.
         @dynamic_scope = !schemas.empty?
         @default_dialect = dialect
-
-        compile(schema, base_uri: base_uri, dialect: dialect) unless schema.nil?
       end
 
       def compile(schema, base_uri: nil, dialect: @default_dialect)
         root_dialect = dialect_for(schema, dialect)
-        @root = compile_document(schema, base_uri.to_s, root_dialect)
+        compile_document(schema, base_uri.to_s, root_dialect)
       end
 
       def resolve(node, reference)

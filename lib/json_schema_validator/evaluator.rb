@@ -10,8 +10,8 @@ module JsonSchemaValidator
       def initialize(schema, content: false, format: false)
         @validate_content = content
         @validate_format = format
-        @graph = schema.send(:graph)
-        @root = schema.send(:root)
+        @graph = schema.graph
+        @root = schema.root
         @regexps = nil
         @active = nil
       end
