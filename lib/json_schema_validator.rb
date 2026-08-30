@@ -2,8 +2,8 @@
 
 require "json"
 require "base64"
-require "ipaddr"
 require_relative "json_schema_validator/evaluation"
+require_relative "json_schema_validator/formats"
 require_relative "json_schema_validator/schema_graph"
 
 module JsonSchemaValidator
@@ -65,8 +65,9 @@ module JsonSchemaValidator
 
   module Internal
     class Evaluator
-      def initialize(schema, content: false)
+      def initialize(schema, content: false, format: false)
         @validate_content = content
+        @validate_format = format
         @graph = schema.send(:graph)
         @root = schema.send(:root)
         @regexps = nil
@@ -119,6 +120,10 @@ module JsonSchemaValidator
         end
 
         keywords = node.keyword_mask
+        if keywords.zero? && format_asserted?(node)
+          return !instance.is_a?(String) || Formats.valid?(node.format, instance)
+        end
+
         categories = Internal::Dialect
         return false if (keywords & categories::TYPE) != 0 && !valid_type?(schema, instance)
         return false if (keywords & categories::ENUM) != 0 && !valid_enum?(schema, instance)
@@ -130,7 +135,13 @@ module JsonSchemaValidator
         when Array
           (keywords & categories::ARRAY) == 0 || valid_array?(node, instance)
         when String
-          (keywords & categories::STRING) == 0 || valid_string?(node, instance)
+          if (keywords & categories::STRING) != 0
+            valid_string?(node, instance)
+          elsif format_asserted?(node)
+            Formats.valid?(node.format, instance)
+          else
+            true
+          end
         when Numeric
           instance.is_a?(Complex) || (keywords & categories::NUMBER) == 0 || valid_number?(schema, instance)
         else
@@ -230,8 +241,8 @@ module JsonSchemaValidator
         return false if schema.key?("maxLength") && length > schema["maxLength"]
         return false if schema.key?("minLength") && length < schema["minLength"]
         return false if schema.key?("pattern") && !ecma_regexp(schema["pattern"]).match?(value)
-        if node.dialect.format_assertion? && schema["format"] == "ipv4"
-          return false unless IPAddr.new(value).ipv4?
+        if format_asserted?(node)
+          return false unless Formats.valid?(node.format, value)
         end
         return valid_content?(schema, value) if @validate_content
 
@@ -414,7 +425,7 @@ module JsonSchemaValidator
             evaluation = evaluation.merge(check_array(node, instance, instance_path, schema_path, evaluation))
           end
         when String
-          check_string(node, instance, instance_path, schema_path) if (keywords & categories::STRING) != 0
+          check_string(node, instance, instance_path, schema_path) if (keywords & categories::STRING) != 0 || format_asserted?(node)
         when Numeric
           check_number(schema, instance, instance_path, schema_path) if !instance.is_a?(Complex) && (keywords & categories::NUMBER) != 0
         end
@@ -564,15 +575,16 @@ module JsonSchemaValidator
           matched = ecma_regexp(schema["pattern"]).match?(value)
           add_error("pattern", path, append(schema_path, "pattern"), "string does not match pattern") unless matched
         end
-        if node.dialect.format_assertion? && schema["format"] == "ipv4"
-          valid = IPAddr.new(value).ipv4?
-          add_error("format", path, append(schema_path, "format"), "string is not a valid ipv4 address") unless valid
+        if format_asserted?(node)
+          add_error("format", path, append(schema_path, "format"), "string is not a valid #{node.format.name}") unless Formats.valid?(node.format, value)
         end
         check_content(schema, value, path, schema_path) if @validate_content
       rescue RegexpError
         add_error("pattern", path, append(schema_path, "pattern"), "invalid regular expression")
-      rescue IPAddr::InvalidAddressError
-        add_error("format", path, append(schema_path, "format"), "string is not a valid ipv4 address")
+      end
+
+      private def format_asserted?(node)
+        (@validate_format || node.dialect.format_assertion?) && !node.format.nil?
       end
 
       private def check_array(node, value, path, schema_path, prior_evaluation)
@@ -848,13 +860,13 @@ module JsonSchemaValidator
   end
 
   class Validator
-    def initialize(schema = nil, content: false, **schema_keywords)
+    def initialize(schema = nil, content: false, format: false, **schema_keywords)
       schema = schema_keywords unless schema_keywords.empty?
       unless schema.is_a?(CompiledSchema)
         raise ArgumentError, "schema must be compiled by SchemaRegistry#compile"
       end
 
-      @evaluator = Internal::Evaluator.new(schema, content: content)
+      @evaluator = Internal::Evaluator.new(schema, content: content, format: format)
     end
 
     def validate(instance)
@@ -870,13 +882,13 @@ module JsonSchemaValidator
     SchemaRegistry.new(schemas: schemas).compile(*args, base_uri: base_uri, **schema_keywords)
   end
 
-  module_function def validate(schema, instance, schemas: {}, base_uri: nil, content: false)
+  module_function def validate(schema, instance, schemas: {}, base_uri: nil, content: false, format: false)
     compiled = compile(schema, schemas: schemas, base_uri: base_uri)
-    Validator.new(compiled, content: content).validate(instance)
+    Validator.new(compiled, content: content, format: format).validate(instance)
   end
 
-  module_function def valid?(schema, instance, schemas: {}, base_uri: nil, content: false)
+  module_function def valid?(schema, instance, schemas: {}, base_uri: nil, content: false, format: false)
     compiled = compile(schema, schemas: schemas, base_uri: base_uri)
-    Validator.new(compiled, content: content).valid?(instance)
+    Validator.new(compiled, content: content, format: format).valid?(instance)
   end
 end
