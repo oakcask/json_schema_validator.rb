@@ -37,13 +37,23 @@ bundle exec ruby benchmark/draft6.rb
 ```
 
 `draft2019_09.rb` and `draft2020_12.rb` compare this product with `json_schemer`
-over all supported required and optional cases for their respective dialects.
-Both scripts verify every expected result before measuring build, end-to-end
-suite, and validation performance.
+over all supported required and top-level optional cases for their respective
+dialects. Both scripts verify every expected result before measuring build,
+end-to-end suite, and validation performance.
 
 ```sh
 bundle exec ruby benchmark/draft2019_09.rb
 bundle exec ruby benchmark/draft2020_12.rb
+```
+
+`formats.rb` compares `date`, `time`, and `date-time` assertion performance
+with `json_schemer`. It runs every case from the three Draft 2020-12 official
+format files with format validation enabled in both products. It verifies this
+product against every expected result, measures only cases both products handle
+correctly, and reports any excluded product differences before measuring.
+
+```sh
+bundle exec ruby benchmark/formats.rb
 ```
 
 `repeated_validation.rb` compares repeated validation throughput against
