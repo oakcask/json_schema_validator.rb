@@ -61,13 +61,16 @@ RSpec.describe JsonSchemaValidator do
     expect(validator.validate("1")).not_to be_valid
   end
 
-  it "requires the schema as a positional argument", :aggregate_failures do
+  it "configures validators separately from the positional schema", :aggregate_failures do
     schema = {"type" => "string", "format" => "date"}
     annotation_validator = described_class.compile(schema)
     assertion_validator = described_class.compile(schema, format: true)
 
     expect(annotation_validator.valid?("not a date")).to be(true)
     expect(assertion_validator.valid?("not a date")).to be(false)
+  end
+
+  it "rejects schema keyword shorthand" do
     expect { described_class.compile(type: "string") }.to raise_error(ArgumentError)
   end
 
@@ -81,12 +84,10 @@ RSpec.describe JsonSchemaValidator do
   it "reuses a compiled root for validators with different options", :aggregate_failures do
     registry = described_class::SchemaRegistry.new
     schema = {"format" => "date"}
+    validators = [registry.compile(schema), registry.compile(schema, format: true)]
 
-    annotation_validator = registry.compile(schema)
-    assertion_validator = registry.compile(schema, base_uri: "", format: true)
-
-    expect(annotation_validator.valid?("not a date")).to be(true)
-    expect(assertion_validator.valid?("not a date")).to be(false)
+    expect(validators.first.valid?("not a date")).to be(true)
+    expect(validators.last.valid?("not a date")).to be(false)
   end
 
   it "keeps format as an annotation by default" do
