@@ -49,4 +49,24 @@ RSpec.describe JsonSchemaValidator do
   it "keeps format as an annotation by default" do
     expect(described_class.valid?({"format" => "email"}, "not an email")).to be(true)
   end
+
+  it "optionally asserts supported formats", :aggregate_failures do
+    expect(described_class.valid?({"format" => "date"}, "2020-02-29", format: true)).to be(true)
+    expect(described_class.valid?({"format" => "date"}, "2021-02-29", format: true)).to be(false)
+
+    result = described_class.validate({"format" => "time"}, "24:00:00Z", format: true)
+    expect(result).not_to be_valid
+    expect(result.errors.first.to_h).to include(keyword: "format", schema_path: "/format")
+  end
+
+  it "supports format assertions with a reusable validator", :aggregate_failures do
+    validator = described_class::Validator.new(described_class.compile("format" => "date-time"), format: true)
+
+    expect(validator.valid?("1963-06-19T08:30:06Z")).to be(true)
+    expect(validator.valid?("1963-06-19 08:30:06Z")).to be(false)
+  end
+
+  it "ignores unknown formats in best-effort assertion mode" do
+    expect(described_class.valid?({"format" => "unknown"}, "anything", format: true)).to be(true)
+  end
 end
