@@ -50,9 +50,6 @@ jobs:
         env:
           RELEASE_BRANCH: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
         run: |
-          if git diff --quiet -- Gemfile.lock; then
-            exit 0
-          fi
           git config user.name "oakcask-actions[bot]"
           git config user.email "206904404+oakcask-actions[bot]@users.noreply.github.com"
           git add Gemfile.lock
