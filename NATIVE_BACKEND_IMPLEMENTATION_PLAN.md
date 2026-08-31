@@ -11,6 +11,12 @@ validator over an immutable, compactable, shareable typed-data graph. Forced
 native differential, exception, interruption, GC, thread, Ractor, package, and
 performance checkpoints cover the slice.
 
+Workstreams 4 through 6 are complete. The forced-native evaluator consumes only
+the immutable native graph snapshot, covers boolean and detailed validation for
+the complete supported keyword set, and has no dispatch back to a Ruby graph or
+Ruby evaluator instance. Separate-process differential CI compares ordered
+detailed results for every selected official-suite case.
+
 This document describes the complete migration from the current Ruby
 implementation to a generated CRuby native extension. The work is not complete
 when a subset of keywords runs natively. It is complete only when the native
@@ -763,6 +769,13 @@ memory, and repeated-validation samples are retained as the next checkpoint.
   complete graph representation is available.
 
 ### 6. Implement the complete native evaluator
+
+Status: complete. Native graph views preserve resource, dialect, reference,
+format, and dynamic-scope metadata for every node. Each validation call owns an
+independent execution context, while validators and their compiled graph remain
+shareable. The selected Draft 7, Draft 2019-09, and Draft 2020-12 corpus runs
+through separate Ruby and forced-native processes and compares canonical
+boolean results and ordered detailed errors.
 
 - Generate boolean and detailed validation paths from their maintained Ruby
   translation units.

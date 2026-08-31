@@ -60,11 +60,11 @@ RSpec.describe "native type vertical slice" do
     end
   end
 
-  it "compiles unsupported evaluation keywords but never falls back to the Ruby evaluator" do
+  it "evaluates keywords beyond the original type slice without falling back" do
     validator = Schemurai.compile({"type" => "integer", "minimum" => 1}, backend: :native)
 
-    expect { validator.valid?(2) }
-      .to raise_error(Schemurai::Error, /native evaluator does not support "minimum"/)
+    expect(validator.valid?(2)).to be(true)
+    expect(validator.valid?(0)).to be(false)
   end
 
   it "runs forced Ruby and native differential records in separate processes" do # rubocop:disable RSpec/ExampleLength

@@ -141,15 +141,19 @@ RSpec.describe "native schema compilation and ownership" do
       schema: Object.new,
       dialect: :draft7,
       dialect_uri: "http://json-schema.org/draft-07/schema",
+      ref_siblings: false,
+      format_assertion: false,
+      supports_min_contains: false,
       base_uri: "",
       schema_path: "",
       resource_path: "",
+      resource_root: 0,
       keyword_mask: 0,
       format: nil,
       children: [],
       references: []
     }
-    snapshot = {root: 0, nodes: [record], uri_registry: {}, dynamic_anchors: {}}
+    snapshot = {root: 0, nodes: [record], uri_registry: {}, dynamic_anchors: {}, dynamic_scope: false}
 
     expect { Schemurai::Native::Graph.new(snapshot) }.to raise_error(TypeError)
     GC.start

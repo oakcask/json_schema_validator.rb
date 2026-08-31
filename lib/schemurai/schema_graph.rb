@@ -164,9 +164,13 @@ module Schemurai
             schema: node.schema,
             dialect: node.dialect.name,
             dialect_uri: node.dialect.uri,
+            ref_siblings: node.dialect.ref_siblings?,
+            format_assertion: node.dialect.format_assertion?,
+            supports_min_contains: node.dialect.keywords.key?("minContains"),
             base_uri: node.base_uri,
             schema_path: node.schema_path,
             resource_path: node.resource_path,
+            resource_root: indexes.fetch(node.resource.root),
             keyword_mask: node.keyword_mask,
             format: node.format&.name,
             children: children,
@@ -179,7 +183,13 @@ module Schemurai
           result[resource_index] = names.to_h { |name, node| [name, indexes.fetch(node)] }
         end
 
-        {root: indexes.fetch(root), nodes: node_records, uri_registry: registry, dynamic_anchors: anchors}
+        {
+          root: indexes.fetch(root),
+          nodes: node_records,
+          uri_registry: registry,
+          dynamic_anchors: anchors,
+          dynamic_scope: dynamic_scope?
+        }
       end
 
       private def compilation_changes

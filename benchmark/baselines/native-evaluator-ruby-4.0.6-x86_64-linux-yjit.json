@@ -1,0 +1,16 @@
+{
+  "benchmark": "native_complete_evaluator",
+  "ruby_version": "ruby 4.0.6 (2026-07-14 revision 03b6d3f889) +YJIT +PRISM [x86_64-linux]",
+  "platform": "x86_64-linux",
+  "compiler": "gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "yjit": true,
+  "iterations_per_sample": 10000,
+  "warmup_iterations": 1000,
+  "samples": [
+    {"ruby": {"boolean_seconds": 0.022950457991100848, "detailed_seconds": 0.1111070989863947}, "native": {"boolean_seconds": 0.035718219995032996, "detailed_seconds": 0.12206046702340245}},
+    {"ruby": {"boolean_seconds": 0.020674541010521352, "detailed_seconds": 0.08959518000483513}, "native": {"boolean_seconds": 0.03565755998715758, "detailed_seconds": 0.11840135703096166}},
+    {"ruby": {"boolean_seconds": 0.020594328991137445, "detailed_seconds": 0.08884716802276671}, "native": {"boolean_seconds": 0.03547425998840481, "detailed_seconds": 0.11656131997006014}},
+    {"ruby": {"boolean_seconds": 0.020932263985741884, "detailed_seconds": 0.09292361797997728}, "native": {"boolean_seconds": 0.03529203403741121, "detailed_seconds": 0.11960677098250017}},
+    {"ruby": {"boolean_seconds": 0.020266562001779675, "detailed_seconds": 0.09108539100270718}, "native": {"boolean_seconds": 0.03501791099552065, "detailed_seconds": 0.11780310602625832}}
+  ]
+}

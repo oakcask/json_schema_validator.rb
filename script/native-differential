@@ -1,0 +1,38 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "open3"
+require_relative "../oracle/lib/case_catalog"
+require_relative "../oracle/lib/comparator"
+
+catalog = SchemuraiOracle::CaseCatalog.new
+selected = catalog.each_case.select { |record| record.classification == "selected" }
+input = selected.map do |record|
+  JSON.generate("catalog_case" => record.id, "operation" => "validate")
+end.join("\n") << "\n"
+
+run = lambda do |backend|
+  output, error, status = Open3.capture3(
+    Gem.ruby,
+    "-Ilib",
+    "-Iext/schemurai",
+    "script/oracle-runner",
+    "--backend",
+    backend,
+    stdin_data: input
+  )
+  abort "#{backend} oracle runner failed:\n#{error}" unless status.success?
+
+  output.lines.map { |line| JSON.parse(line) }
+end
+
+ruby_records = run.call("ruby")
+native_records = run.call("native")
+mismatches = SchemuraiOracle::Comparator.new.compare(ruby_records, native_records)
+unless mismatches.empty?
+  warn JSON.pretty_generate("matched" => false, "mismatches" => mismatches.first(20))
+  exit 1
+end
+
+puts JSON.generate("matched" => true, "records" => ruby_records.length)

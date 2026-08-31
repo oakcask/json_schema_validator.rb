@@ -18,8 +18,12 @@ typedef struct {
     VALUE format;
     VALUE children;
     VALUE references;
+    size_t resource_root;
     unsigned long keyword_mask;
     unsigned long type_mask;
+    bool ref_siblings;
+    bool format_assertion;
+    bool supports_min_contains;
 } schemurai_node_t;
 
 typedef struct {
@@ -28,6 +32,7 @@ typedef struct {
     size_t root;
     VALUE uri_registry;
     VALUE dynamic_anchors;
+    bool dynamic_scope;
     bool shareable;
 } schemurai_graph_t;
 
@@ -35,12 +40,17 @@ static ID id_root;
 static ID id_nodes;
 static ID id_uri_registry;
 static ID id_dynamic_anchors;
+static ID id_dynamic_scope;
 static ID id_schema;
 static ID id_dialect;
 static ID id_dialect_uri;
+static ID id_ref_siblings;
+static ID id_format_assertion;
+static ID id_supports_min_contains;
 static ID id_base_uri;
 static ID id_schema_path;
 static ID id_resource_path;
+static ID id_resource_root;
 static ID id_keyword_mask;
 static ID id_format;
 static ID id_children;
@@ -132,6 +142,7 @@ schemurai_graph_allocate(VALUE klass)
     graph->root = 0;
     graph->uri_registry = Qnil;
     graph->dynamic_anchors = Qnil;
+    graph->dynamic_scope = false;
     graph->shareable = false;
     return wrapper;
 }
@@ -189,6 +200,7 @@ schemurai_graph_initialize(VALUE self, VALUE snapshot)
         VALUE record = rb_ary_entry(records, index);
         Check_Type(record, T_HASH);
         (void)NUM2ULONG(schemurai_hash_symbol(record, id_keyword_mask));
+        (void)NUM2SIZET(schemurai_hash_symbol(record, id_resource_root));
         Check_Type(schemurai_hash_symbol(record, id_children), T_ARRAY);
         Check_Type(schemurai_hash_symbol(record, id_references), T_ARRAY);
     }
@@ -200,9 +212,14 @@ schemurai_graph_initialize(VALUE self, VALUE snapshot)
         node->schema = schemurai_hash_symbol(record, id_schema);
         node->dialect = schemurai_hash_symbol(record, id_dialect);
         node->dialect_uri = schemurai_hash_symbol(record, id_dialect_uri);
+        node->ref_siblings = RTEST(schemurai_hash_symbol(record, id_ref_siblings));
+        node->format_assertion = RTEST(schemurai_hash_symbol(record, id_format_assertion));
+        node->supports_min_contains = RTEST(schemurai_hash_symbol(record, id_supports_min_contains));
         node->base_uri = schemurai_hash_symbol(record, id_base_uri);
         node->schema_path = schemurai_hash_symbol(record, id_schema_path);
         node->resource_path = schemurai_hash_symbol(record, id_resource_path);
+        node->resource_root = NUM2SIZET(schemurai_hash_symbol(record, id_resource_root));
+        if (node->resource_root >= (size_t)count) rb_raise(rb_eArgError, "native graph resource root index is out of bounds");
         node->keyword_mask = NUM2ULONG(schemurai_hash_symbol(record, id_keyword_mask));
         node->format = schemurai_hash_symbol(record, id_format);
         node->children = schemurai_hash_symbol(record, id_children);
@@ -213,6 +230,7 @@ schemurai_graph_initialize(VALUE self, VALUE snapshot)
     }
     graph->uri_registry = schemurai_hash_symbol(snapshot, id_uri_registry);
     graph->dynamic_anchors = schemurai_hash_symbol(snapshot, id_dynamic_anchors);
+    graph->dynamic_scope = RTEST(schemurai_hash_symbol(snapshot, id_dynamic_scope));
     return schemurai_graph_make_shareable(self);
 }
 
@@ -228,7 +246,8 @@ schemurai_graph_for_shareability_test(VALUE klass, VALUE schema)
     graph->nodes[0] = (schemurai_node_t){
         .schema = schema, .dialect = Qnil, .dialect_uri = Qnil, .base_uri = Qnil,
         .schema_path = Qnil, .resource_path = Qnil, .format = Qnil,
-        .children = Qnil, .references = Qnil, .keyword_mask = 0, .type_mask = 0,
+        .children = Qnil, .references = Qnil, .resource_root = 0, .keyword_mask = 0, .type_mask = 0,
+        .ref_siblings = false, .format_assertion = false, .supports_min_contains = false,
     };
     graph->uri_registry = Qnil;
     graph->dynamic_anchors = Qnil;
@@ -279,9 +298,13 @@ schemurai_graph_node_metadata(VALUE self, VALUE index_value)
     rb_hash_aset(result, ID2SYM(id_schema), node->schema);
     rb_hash_aset(result, ID2SYM(id_dialect), node->dialect);
     rb_hash_aset(result, ID2SYM(id_dialect_uri), node->dialect_uri);
+    rb_hash_aset(result, ID2SYM(id_ref_siblings), node->ref_siblings ? Qtrue : Qfalse);
+    rb_hash_aset(result, ID2SYM(id_format_assertion), node->format_assertion ? Qtrue : Qfalse);
+    rb_hash_aset(result, ID2SYM(id_supports_min_contains), node->supports_min_contains ? Qtrue : Qfalse);
     rb_hash_aset(result, ID2SYM(id_base_uri), node->base_uri);
     rb_hash_aset(result, ID2SYM(id_schema_path), node->schema_path);
     rb_hash_aset(result, ID2SYM(id_resource_path), node->resource_path);
+    rb_hash_aset(result, ID2SYM(id_resource_root), SIZET2NUM(node->resource_root));
     rb_hash_aset(result, ID2SYM(id_keyword_mask), ULONG2NUM(node->keyword_mask));
     rb_hash_aset(result, ID2SYM(id_format), node->format);
     return result;
@@ -339,6 +362,14 @@ schemurai_graph_dynamic_anchor(VALUE self, VALUE resource_index, VALUE name)
     TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
     anchors = rb_hash_aref(graph->dynamic_anchors, resource_index);
     return NIL_P(anchors) ? Qnil : rb_hash_aref(anchors, name);
+}
+
+static VALUE
+schemurai_graph_dynamic_scope(VALUE self)
+{
+    schemurai_graph_t *graph;
+    TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
+    return graph->dynamic_scope ? Qtrue : Qfalse;
 }
 
 static VALUE
@@ -419,12 +450,17 @@ Init_schemurai_native(void)
     id_nodes = rb_intern("nodes");
     id_uri_registry = rb_intern("uri_registry");
     id_dynamic_anchors = rb_intern("dynamic_anchors");
+    id_dynamic_scope = rb_intern("dynamic_scope");
     id_schema = rb_intern("schema");
     id_dialect = rb_intern("dialect");
     id_dialect_uri = rb_intern("dialect_uri");
+    id_ref_siblings = rb_intern("ref_siblings");
+    id_format_assertion = rb_intern("format_assertion");
+    id_supports_min_contains = rb_intern("supports_min_contains");
     id_base_uri = rb_intern("base_uri");
     id_schema_path = rb_intern("schema_path");
     id_resource_path = rb_intern("resource_path");
+    id_resource_root = rb_intern("resource_root");
     id_keyword_mask = rb_intern("keyword_mask");
     id_format = rb_intern("format");
     id_children = rb_intern("children");
@@ -447,6 +483,7 @@ Init_schemurai_native(void)
     rb_define_method(graph, "resolve", schemurai_graph_resolve, 2);
     rb_define_method(graph, "lookup", schemurai_graph_lookup, 1);
     rb_define_method(graph, "dynamic_anchor", schemurai_graph_dynamic_anchor, 2);
+    rb_define_method(graph, "dynamic_scope?", schemurai_graph_dynamic_scope, 0);
     rb_define_method(graph, "valid?", schemurai_graph_valid, 1);
     rb_define_method(graph, "__make_shareable__", schemurai_graph_make_shareable, 0);
     rb_define_method(graph, "shareable_state?", schemurai_graph_shareable_state, 0);

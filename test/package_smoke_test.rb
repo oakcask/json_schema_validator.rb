@@ -68,7 +68,7 @@ order = {
   "created_at" => "2026-08-31T10:15:00+09:00"
 }
 
-validator = Schemurai.compile(schema, format: true)
+validator = Schemurai.compile(schema, format: true, backend: :native)
 abort "expected the order to be valid" unless validator.valid?(order)
 
 invalid_order = order.merge(

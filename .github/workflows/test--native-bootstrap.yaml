@@ -13,6 +13,7 @@ on:
       - lib/schemurai/**/*.rb
       - native/**/*
       - script/generate-native
+      - script/native-differential
       - test/native_*.rb
       - tool/**/*
   pull_request:
@@ -25,6 +26,7 @@ on:
       - lib/schemurai/**/*.rb
       - native/**/*
       - script/generate-native
+      - script/native-differential
       - test/native_*.rb
       - tool/**/*
 
@@ -54,4 +56,6 @@ jobs:
         run: make
         working-directory: ext/schemurai
       - name: Run Ruby and C intrinsic contracts
-        run: bundle exec rspec -Ilib -Iext/schemurai test/native_intrinsic_test.rb test/native_type_slice_test.rb test/native_schema_compilation_test.rb
+        run: bundle exec rspec -Ilib -Iext/schemurai test/native_intrinsic_test.rb test/native_type_slice_test.rb test/native_schema_compilation_test.rb test/native_evaluator_test.rb
+      - name: Compare Ruby and native evaluators
+        run: bundle exec ruby script/native-differential

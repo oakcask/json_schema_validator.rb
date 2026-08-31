@@ -10,6 +10,11 @@ extension directory to the load path. Raw checkpoint samples live under
 `benchmark/baselines/` and record the runtime, compiler, warmup, iteration
 count, and YJIT state needed to reproduce the comparison.
 
+`native_evaluator.rb` is the Workstream 6 checkpoint. It compares boolean and
+detailed validation of a schema spanning type, numeric, string, array, and
+object keywords. Run it with and without `--yjit`; committed raw samples record
+the environment and iteration count.
+
 `draft7.rb` measures this implementation against all 1,045 supported required
 and optional cases from the official Draft 7 suite. It verifies every expected
 result before measuring validator construction, end-to-end suite execution, and

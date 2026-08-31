@@ -16,7 +16,7 @@
  * translation_source:lib/schemurai/dialect.rb: 6a234e94399aef08c064f9f52dfa06b3d0b18c5c1713af3fa48d247bc22db8eb
  * translation_source:lib/schemurai/evaluator.rb: 3df32a45b6eefecf6b6f1cd863ce6c53fa010afd1b1a0a20526c5edbdf89997a
  * translation_source:lib/schemurai/formats.rb: 46031de70678ccadb08403f4df8a3fa9dea8bb0abf33cb8155fa11cddcdda21a
- * translation_source:lib/schemurai/schema_graph.rb: 4d2eae2021564952d51d18048c8d3bf7482088fda5612be927fe490aba9d1761
+ * translation_source:lib/schemurai/schema_graph.rb: fd79b72d0714edbc6960fdee37fa0d53b3cf871f8737f274da0bd04f75bec268
  * translation_source:lib/schemurai/type_slice.rb: 0a86bb7338d145ba9b181201be554367e7f7d365c3c49f8eaf0f23a0999ddcda
  * translation_source:native/source/bootstrap.rb: 850a865511c36a252080d9e500f8a327497e0cf3b2c4bd9a89b200b43762e1d4
  * translation_units: 97dd0d1d610bb0564e67db4ccaa27f87eb18cd418ceed59fd1304bac772da2cf
