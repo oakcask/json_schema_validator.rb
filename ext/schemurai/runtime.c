@@ -61,7 +61,10 @@ static ID id_references;
 static void
 schemurai_interrupt_checkpoint(size_t index)
 {
-    if ((index & 0x3ffUL) == 0) rb_thread_check_ints();
+    if ((index & 0x3ffUL) == 0) {
+        rb_thread_schedule();
+        rb_thread_check_ints();
+    }
 }
 
 static VALUE
