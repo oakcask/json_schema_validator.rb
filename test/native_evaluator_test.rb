@@ -49,11 +49,15 @@ RSpec.describe "the native evaluator" do
       end
     end
     mutating_hash = hash_class["first", 1, "second", "bad"]
+    key_hash_class = Class.new(Hash) { define_method(:key?) { |_key| false } }
+    key_hash = key_hash_class.new
+    key_hash["present"] = true
 
     expect(Schemurai.valid?({"type" => "string", "minLength" => 4}, string_subclass, backend: :native)).to be(true)
     expect(Schemurai.valid?({"type" => "string", "minLength" => 2}, singleton_string, backend: :native)).to be(true)
     expect(Schemurai.valid?({"type" => "number", "minimum" => 2}, numeric_class.new, backend: :native)).to be(true)
     expect(Schemurai.valid?({"properties" => {"first" => {"type" => "integer"}, "second" => {"type" => "integer"}}}, mutating_hash, backend: :native)).to be(true)
+    expect(Schemurai.valid?({"required" => ["present"]}, key_hash, backend: :native)).to be(false)
 
     exceptional = Class.new(Numeric) { define_method(:finite?) { raise "finite failed" } }
     validator = Schemurai.compile({"type" => "integer"}, backend: :native)
