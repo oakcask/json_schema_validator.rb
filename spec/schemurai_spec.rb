@@ -24,6 +24,54 @@ RSpec.describe Schemurai do
     )
   end
 
+  def nested_path_schema
+    {
+      "properties" => {
+        "a/b" => {
+          "allOf" => [
+            {"properties" => {"~key" => {"type" => "integer", "minimum" => 2}}}
+          ]
+        }
+      }
+    }
+  end
+
+  def reference_path_schema
+    {
+      "properties" => {"x" => {"$ref" => "#/$defs/value"}},
+      "$defs" => {"value" => {"type" => "integer"}}
+    }
+  end
+
+  def expect_error(result, keyword:, instance_path:, schema_path:, message: nil)
+    error = result.errors.fetch(0)
+    expect(error).to have_attributes(keyword: keyword, instance_path: instance_path, schema_path: schema_path)
+    expect(error.message).to eq(message) if message
+  end
+
+  def expect_nested_path_error(result)
+    expect_error(
+      result,
+      keyword: "minimum",
+      instance_path: "/a~1b/~0key",
+      schema_path: "/properties/a~1b/allOf/0/properties/~0key/minimum"
+    )
+  end
+
+  def expect_combiner_error(result)
+    expect_error(
+      result,
+      keyword: "anyOf",
+      instance_path: "",
+      schema_path: "/anyOf",
+      message: "no subschema matched"
+    )
+  end
+
+  def expect_reference_path_error(result)
+    expect_error(result, keyword: "type", instance_path: "/x", schema_path: "/properties/x/$ref/type")
+  end
+
   it "keeps implementation constants private" do
     expected = %i[
       Error ResolutionError Result SchemaRegistry UnsupportedFormatError VERSION ValidationError Validator
@@ -43,6 +91,22 @@ RSpec.describe Schemurai do
     result = described_class.validate(schema, 1)
     expect(result).not_to be_valid
     expect(result.errors.first).to be_a(described_class::ValidationError).and have_attributes(keyword: "minimum", instance_path: "")
+  end
+
+  it "reports escaped instance and schema paths for nested errors" do
+    result = described_class.validate(nested_path_schema, {"a/b" => {"~key" => 1}})
+    expect_nested_path_error(result)
+  end
+
+  it "only reports the committed error from failed alternatives" do
+    schema = {"anyOf" => [{"type" => "integer"}, {"type" => "string", "minLength" => 5}]}
+    result = described_class.validate(schema, "x")
+    expect_combiner_error(result)
+  end
+
+  it "keeps the evaluation path when an error occurs through a reference" do
+    result = described_class.validate(reference_path_schema, {"x" => "bad"})
+    expect_reference_path_error(result)
   end
 
   it "resolves registered external schemas", :aggregate_failures do

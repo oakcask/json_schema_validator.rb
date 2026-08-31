@@ -77,6 +77,19 @@ bundle exec ruby benchmark/repeated_validation.rb
 through the compiled validators. Schema compilation is outside the measured
 section.
 
+`error_validation.rb` measures detailed validation over the Draft 2020-12
+official suite together with official-suite-shaped fixtures for a large object
+and a large `anyOf`. It reports both allocated objects and throughput. The large
+fixtures include valid and invalid cases so their expected results are checked
+before measurement.
+
+```sh
+bundle exec ruby benchmark/error_validation.rb
+```
+
+`BENCHMARK_WIDTH` controls the number of object properties and `anyOf`
+alternatives. `BENCHMARK_ITERATIONS` controls the allocation measurement.
+
 Set `BENCHMARK_ONLY` to `build`, `suite`, or `validate` to run one workload.
 This is useful for longer, lower-variance measurements:
 

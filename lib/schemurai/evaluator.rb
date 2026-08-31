@@ -7,6 +7,8 @@ require_relative "evaluation"
 module Schemurai
   module Internal
     class Evaluator
+      MISSING_SEGMENT = Object.new.freeze
+
       def initialize(graph, root, content: false, format: false)
         @validate_content = content
         @validate_format = format
@@ -17,18 +19,29 @@ module Schemurai
       end
 
       def validate(instance)
-        @errors = []
-        @error_count = 0
-        @track_dynamic_scope = @graph.dynamic_scope?
-        evaluate(@root, instance, "", "")
-        Result.new(@errors)
+        errors = []
+        each_error(instance) { |error| errors << error }
+        Result.new(errors)
       end
 
       def valid?(instance)
-        @errors = nil
+        @error_callback = nil
         @error_count = 0
         @track_dynamic_scope = @graph.dynamic_scope?
+        @instance_path = nil
+        @schema_path = nil
         evaluate_valid(@root, instance)
+      end
+
+      private def each_error(instance, &callback)
+        @error_callback = callback
+        @error_count = 0
+        @track_dynamic_scope = @graph.dynamic_scope?
+        @instance_path = []
+        @schema_path = []
+        evaluate(@root, instance)
+      ensure
+        @error_callback = nil
       end
 
       private def evaluate_valid(node, instance)
@@ -40,7 +53,9 @@ module Schemurai
         # applicators. Keep them on the full evaluation path; schemas without
         # them can avoid allocating Evaluation objects and JSON Pointer paths.
         if schema.key?("unevaluatedProperties") || schema.key?("unevaluatedItems")
-          return evaluate(node, instance, nil, nil).valid?
+          @instance_path ||= []
+          @schema_path ||= []
+          return evaluate(node, instance).valid?
         end
 
         if @track_dynamic_scope
@@ -310,11 +325,11 @@ module Schemurai
         true
       end
 
-      private def evaluate(node, instance, instance_path, schema_path)
+      private def evaluate(node, instance)
         schema = node.schema
         return Evaluation.valid if schema == true
         if schema == false
-          add_error("falseSchema", instance_path, schema_path, "boolean schema is false")
+          add_error("falseSchema", "boolean schema is false", append_keyword: false)
           return Evaluation.invalid
         end
         return Evaluation.valid unless schema.is_a?(Hash)
@@ -331,45 +346,45 @@ module Schemurai
           begin
             target = @graph.resolve(node, schema["$ref"])
             evaluation = evaluation.merge(
-              evaluate_reference(node, target, instance, instance_path, schema_path, "$ref")
+              evaluate_reference(node, target, instance, "$ref")
             )
           rescue ResolutionError => e
-            add_error("$ref", instance_path, schema_path, e.message)
+            add_error("$ref", e.message, append_keyword: false)
           end
           return (@error_count == before) ? evaluation : Evaluation.invalid unless node.dialect.ref_siblings?
         end
 
         if schema.key?("$recursiveRef")
           target = recursive_target(node, schema["$recursiveRef"])
-          evaluation = evaluation.merge(evaluate_reference(node, target, instance, instance_path, schema_path, "$recursiveRef"))
+          evaluation = evaluation.merge(evaluate_reference(node, target, instance, "$recursiveRef"))
         end
 
         if schema.key?("$dynamicRef")
           target = dynamic_target(node, schema["$dynamicRef"])
-          evaluation = evaluation.merge(evaluate_reference(node, target, instance, instance_path, schema_path, "$dynamicRef"))
+          evaluation = evaluation.merge(evaluate_reference(node, target, instance, "$dynamicRef"))
         end
 
         keywords = node.keyword_mask
         categories = Internal::Dialect
-        check_type(schema, instance, instance_path, schema_path) if (keywords & categories::TYPE) != 0
-        check_enum(schema, instance, instance_path, schema_path) if (keywords & categories::ENUM) != 0
+        check_type(schema, instance) if (keywords & categories::TYPE) != 0
+        check_enum(schema, instance) if (keywords & categories::ENUM) != 0
         if (keywords & categories::COMBINER) != 0
-          evaluation = evaluation.merge(check_combiners(node, instance, instance_path, schema_path))
+          evaluation = evaluation.merge(check_combiners(node, instance))
         end
 
         case instance
         when Hash
           if (keywords & categories::OBJECT) != 0
-            evaluation = evaluation.merge(check_object(node, instance, instance_path, schema_path, evaluation))
+            evaluation = evaluation.merge(check_object(node, instance, evaluation))
           end
         when Array
           if (keywords & categories::ARRAY) != 0
-            evaluation = evaluation.merge(check_array(node, instance, instance_path, schema_path, evaluation))
+            evaluation = evaluation.merge(check_array(node, instance, evaluation))
           end
         when String
-          check_string(node, instance, instance_path, schema_path) if (keywords & categories::STRING) != 0 || format_asserted?(node)
+          check_string(node, instance) if (keywords & categories::STRING) != 0 || format_asserted?(node)
         when Numeric
-          check_number(schema, instance, instance_path, schema_path) if !instance.is_a?(Complex) && (keywords & categories::NUMBER) != 0
+          check_number(schema, instance) if !instance.is_a?(Complex) && (keywords & categories::NUMBER) != 0
         end
 
         (@error_count == before) ? evaluation : Evaluation.invalid
@@ -377,16 +392,16 @@ module Schemurai
         @dynamic_scope.pop if entered_scope
       end
 
-      private def evaluate_reference(node, target, instance, instance_path, schema_path, keyword)
+      private def evaluate_reference(node, target, instance, keyword)
         instances = active_instances(node)
         instance_id = instance.object_id
         return Evaluation.valid if instances[instance_id]
 
         instances[instance_id] = true
         activated = true
-        evaluate(target, instance, instance_path, append(schema_path, keyword))
+        evaluate_at(target, instance, MISSING_SEGMENT, keyword)
       rescue ResolutionError => e
-        add_error(keyword, instance_path, schema_path, e.message)
+        add_error(keyword, e.message, append_keyword: false)
         Evaluation.invalid
       ensure
         instances&.delete(instance_id) if activated
@@ -417,31 +432,31 @@ module Schemurai
         active[node.object_id] ||= {}
       end
 
-      private def check_type(schema, value, path, schema_path)
+      private def check_type(schema, value)
         return unless schema.key?("type")
 
         types = Array(schema["type"])
         return if types.any? { |type| type?(value, type) }
 
-        add_error("type", path, append(schema_path, "type"), "expected #{types.join(" or ")}")
+        add_error("type", "expected #{types.join(" or ")}")
       end
 
-      private def check_enum(schema, value, path, schema_path)
+      private def check_enum(schema, value)
         if schema.key?("enum") && !schema["enum"].any? { |candidate| json_equal?(candidate, value) }
-          add_error("enum", path, append(schema_path, "enum"), "value is not in enum")
+          add_error("enum", "value is not in enum")
         end
         if schema.key?("const") && !json_equal?(schema["const"], value)
-          add_error("const", path, append(schema_path, "const"), "value does not equal const")
+          add_error("const", "value does not equal const")
         end
       end
 
-      private def check_combiners(node, value, path, schema_path)
+      private def check_combiners(node, value)
         schema = node.schema
         evaluation = Evaluation.valid
         if schema.key?("allOf")
           schema["allOf"].each_index do |index|
             evaluation = evaluation.merge(
-              evaluate(node.child("allOf", index), value, path, append(append(schema_path, "allOf"), index))
+              evaluate_at(node.child("allOf", index), value, MISSING_SEGMENT, "allOf", index)
             )
           end
         end
@@ -449,11 +464,11 @@ module Schemurai
         if schema.key?("anyOf")
           matches = []
           schema["anyOf"].each_index do |index|
-            result = trial(node.child("anyOf", index), value, path, append(append(schema_path, "anyOf"), index))
+            result = trial_at(node.child("anyOf", index), value, MISSING_SEGMENT, "anyOf", index)
             matches << result if result.valid?
           end
           if matches.empty?
-            add_error("anyOf", path, append(schema_path, "anyOf"), "no subschema matched")
+            add_error("anyOf", "no subschema matched")
           else
             matches.each { |result| evaluation = evaluation.merge(result) }
           end
@@ -462,91 +477,91 @@ module Schemurai
         if schema.key?("oneOf")
           matches = []
           schema["oneOf"].each_index do |index|
-            result = trial(node.child("oneOf", index), value, path, append(append(schema_path, "oneOf"), index))
+            result = trial_at(node.child("oneOf", index), value, MISSING_SEGMENT, "oneOf", index)
             matches << result if result.valid?
           end
           if matches.length == 1
             evaluation = evaluation.merge(matches.first)
           else
-            add_error("oneOf", path, append(schema_path, "oneOf"), "expected exactly one match, got #{matches.length}")
+            add_error("oneOf", "expected exactly one match, got #{matches.length}")
           end
         end
 
-        if schema.key?("not") && trial(node.child("not"), value, path, append(schema_path, "not")).valid?
-          add_error("not", path, append(schema_path, "not"), "subschema matched")
+        if schema.key?("not") && trial_at(node.child("not"), value, MISSING_SEGMENT, "not").valid?
+          add_error("not", "subschema matched")
         end
 
         if schema.key?("if")
-          condition = trial(node.child("if"), value, path, append(schema_path, "if"))
+          condition = trial_at(node.child("if"), value, MISSING_SEGMENT, "if")
           branch = condition.valid? ? "then" : "else"
           evaluation = evaluation.merge(condition) if condition.valid?
           if schema.key?(branch)
-            evaluation = evaluation.merge(evaluate(node.child(branch), value, path, append(schema_path, branch)))
+            evaluation = evaluation.merge(evaluate_at(node.child(branch), value, MISSING_SEGMENT, branch))
           end
         end
         evaluation
       end
 
-      private def check_number(schema, value, path, schema_path)
-        compare(schema, "maximum", value, path, schema_path) { |a, b| a <= b }
-        compare(schema, "minimum", value, path, schema_path) { |a, b| a >= b }
-        compare(schema, "exclusiveMaximum", value, path, schema_path) { |a, b| a < b }
-        compare(schema, "exclusiveMinimum", value, path, schema_path) { |a, b| a > b }
+      private def check_number(schema, value)
+        compare(schema, "maximum", value) { |a, b| a <= b }
+        compare(schema, "minimum", value) { |a, b| a >= b }
+        compare(schema, "exclusiveMaximum", value) { |a, b| a < b }
+        compare(schema, "exclusiveMinimum", value) { |a, b| a > b }
 
         return unless schema.key?("multipleOf")
 
         divisor = decimal(schema["multipleOf"])
         valid = divisor.positive? && decimal(value).remainder(divisor).zero?
-        add_error("multipleOf", path, append(schema_path, "multipleOf"), "number is not a multiple") unless valid
+        add_error("multipleOf", "number is not a multiple") unless valid
       end
 
-      private def compare(schema, keyword, value, path, schema_path)
+      private def compare(schema, keyword, value)
         return unless schema.key?(keyword)
         return if yield(decimal(value), decimal(schema[keyword]))
 
-        add_error(keyword, path, append(schema_path, keyword), "numeric limit was exceeded")
+        add_error(keyword, "numeric limit was exceeded")
       end
 
-      private def check_string(node, value, path, schema_path)
+      private def check_string(node, value)
         schema = node.schema
         length = value.length
-        limit(schema, "maxLength", length, path, schema_path) { |actual, expected| actual <= expected }
-        limit(schema, "minLength", length, path, schema_path) { |actual, expected| actual >= expected }
+        limit(schema, "maxLength", length) { |actual, expected| actual <= expected }
+        limit(schema, "minLength", length) { |actual, expected| actual >= expected }
 
         if schema.key?("pattern")
           matched = ecma_regexp(schema["pattern"]).match?(value)
-          add_error("pattern", path, append(schema_path, "pattern"), "string does not match pattern") unless matched
+          add_error("pattern", "string does not match pattern") unless matched
         end
         if format_asserted?(node)
-          add_error("format", path, append(schema_path, "format"), "string is not a valid #{node.format.name}") unless node.format.call(value)
+          add_error("format", "string is not a valid #{node.format.name}") unless node.format.call(value)
         end
-        check_content(schema, value, path, schema_path) if @validate_content
+        check_content(schema, value) if @validate_content
       rescue RegexpError
-        add_error("pattern", path, append(schema_path, "pattern"), "invalid regular expression")
+        add_error("pattern", "invalid regular expression")
       end
 
       private def format_asserted?(node)
         (@validate_format || node.dialect.format_assertion?) && !node.format.nil?
       end
 
-      private def check_array(node, value, path, schema_path, prior_evaluation)
+      private def check_array(node, value, prior_evaluation)
         schema = node.schema
         evaluated = []
-        limit(schema, "maxItems", value.length, path, schema_path) { |actual, expected| actual <= expected }
-        limit(schema, "minItems", value.length, path, schema_path) { |actual, expected| actual >= expected }
+        limit(schema, "maxItems", value.length) { |actual, expected| actual <= expected }
+        limit(schema, "minItems", value.length) { |actual, expected| actual >= expected }
 
         if schema["uniqueItems"]
           duplicate = value.each_with_index.any? do |item, index|
             value[0...index].any? { |previous| json_equal?(previous, item) }
           end
-          add_error("uniqueItems", path, append(schema_path, "uniqueItems"), "array items are not unique") if duplicate
+          add_error("uniqueItems", "array items are not unique") if duplicate
         end
 
         prefix_items = schema["prefixItems"]
         if prefix_items.is_a?(Array)
           prefix_items.each_index do |index|
             break if index >= value.length
-            evaluate(node.child("prefixItems", index), value[index], append(path, index), append(append(schema_path, "prefixItems"), index))
+            evaluate_at(node.child("prefixItems", index), value[index], index, "prefixItems", index)
             evaluated << index
           end
         end
@@ -555,13 +570,13 @@ module Schemurai
         if items.is_a?(Array)
           items.each_index do |index|
             break if index >= value.length
-            evaluate(node.child("items", index), value[index], append(path, index), append(append(schema_path, "items"), index))
+            evaluate_at(node.child("items", index), value[index], index, "items", index)
             evaluated << index
           end
           if value.length > items.length && schema.key?("additionalItems")
             additional = node.child("additionalItems")
             (items.length...value.length).each do |index|
-              evaluate(additional, value[index], append(path, index), append(schema_path, "additionalItems"))
+              evaluate_at(additional, value[index], index, "additionalItems")
               evaluated << index
             end
           end
@@ -569,19 +584,19 @@ module Schemurai
           start = prefix_items.is_a?(Array) ? prefix_items.length : 0
           value.each_with_index do |item, index|
             next if index < start
-            evaluate(node.child("items"), item, append(path, index), append(schema_path, "items"))
+            evaluate_at(node.child("items"), item, index, "items")
             evaluated << index
           end
         end
 
         if schema.key?("contains")
           matched = value.each_index.select do |index|
-            trial(node.child("contains"), value[index], append(path, index), append(schema_path, "contains")).valid?
+            trial_at(node.child("contains"), value[index], index, "contains").valid?
           end
           minimum = schema.fetch("minContains", 1)
           maximum = schema.fetch("maxContains", Float::INFINITY)
           unless matched.length.between?(minimum, maximum)
-            add_error("contains", path, append(schema_path, "contains"), "matched #{matched.length} array items")
+            add_error("contains", "matched #{matched.length} array items")
           end
           evaluated.concat(matched)
         end
@@ -590,21 +605,21 @@ module Schemurai
         if schema.key?("unevaluatedItems")
           unevaluated = (0...value.length).to_a - combined
           unevaluated.each do |index|
-            evaluate(node.child("unevaluatedItems"), value[index], append(path, index), append(schema_path, "unevaluatedItems"))
+            evaluate_at(node.child("unevaluatedItems"), value[index], index, "unevaluatedItems")
           end
           evaluated.concat(unevaluated)
         end
         Evaluation.valid(evaluated_items: evaluated.uniq)
       end
 
-      private def check_object(node, value, path, schema_path, prior_evaluation)
+      private def check_object(node, value, prior_evaluation)
         schema = node.schema
         evaluated = []
-        limit(schema, "maxProperties", value.length, path, schema_path) { |actual, expected| actual <= expected }
-        limit(schema, "minProperties", value.length, path, schema_path) { |actual, expected| actual >= expected }
+        limit(schema, "maxProperties", value.length) { |actual, expected| actual <= expected }
+        limit(schema, "minProperties", value.length) { |actual, expected| actual >= expected }
 
         Array(schema["required"]).each do |name|
-          add_error("required", path, append(schema_path, "required"), "required property #{name.inspect} is missing") unless value.key?(name)
+          add_error("required", "required property #{name.inspect} is missing") unless value.key?(name)
         end
 
         properties = schema.fetch("properties", {})
@@ -613,24 +628,24 @@ module Schemurai
           matched = false
           if properties.key?(name)
             matched = true
-            evaluate(node.child("properties", name), property_value, append(path, name), append(append(schema_path, "properties"), name))
+            evaluate_at(node.child("properties", name), property_value, name, "properties", name)
             evaluated << name
           end
           patterns.each do |pattern, subschema|
             next unless ecma_regexp(pattern).match?(name)
             matched = true
-            evaluate(node.child("patternProperties", pattern), property_value, append(path, name), append(append(schema_path, "patternProperties"), pattern))
+            evaluate_at(node.child("patternProperties", pattern), property_value, name, "patternProperties", pattern)
             evaluated << name
           end
           if !matched && schema.key?("additionalProperties")
-            evaluate(node.child("additionalProperties"), property_value, append(path, name), append(schema_path, "additionalProperties"))
+            evaluate_at(node.child("additionalProperties"), property_value, name, "additionalProperties")
             evaluated << name
           end
         end
 
         if schema.key?("propertyNames")
           value.each_key do |name|
-            evaluate(node.child("propertyNames"), name, append(path, name), append(schema_path, "propertyNames"))
+            evaluate_at(node.child("propertyNames"), name, name, "propertyNames")
           end
         end
 
@@ -638,10 +653,10 @@ module Schemurai
           next unless value.key?(name)
           if dependency.is_a?(Array)
             dependency.each do |required_name|
-              add_error("dependencies", path, append(schema_path, "dependencies"), "property #{required_name.inspect} is required by #{name.inspect}") unless value.key?(required_name)
+              add_error("dependencies", "property #{required_name.inspect} is required by #{name.inspect}") unless value.key?(required_name)
             end
           else
-            result = evaluate(node.child("dependencies", name), value, path, append(append(schema_path, "dependencies"), name))
+            result = evaluate_at(node.child("dependencies", name), value, MISSING_SEGMENT, "dependencies", name)
             evaluated.concat(result.evaluated_properties) if result.valid?
           end
         end
@@ -650,14 +665,14 @@ module Schemurai
           next unless value.key?(name)
           required_names.each do |required_name|
             unless value.key?(required_name)
-              add_error("dependentRequired", path, append(schema_path, "dependentRequired"), "property #{required_name.inspect} is required by #{name.inspect}")
+              add_error("dependentRequired", "property #{required_name.inspect} is required by #{name.inspect}")
             end
           end
         end
 
         schema.fetch("dependentSchemas", {}).each_key do |name|
           next unless value.key?(name)
-          result = evaluate(node.child("dependentSchemas", name), value, path, append(append(schema_path, "dependentSchemas"), name))
+          result = evaluate_at(node.child("dependentSchemas", name), value, MISSING_SEGMENT, "dependentSchemas", name)
           evaluated.concat(result.evaluated_properties) if result.valid?
         end
 
@@ -665,30 +680,30 @@ module Schemurai
         if schema.key?("unevaluatedProperties")
           unevaluated = value.keys - combined
           unevaluated.each do |name|
-            evaluate(node.child("unevaluatedProperties"), value[name], append(path, name), append(schema_path, "unevaluatedProperties"))
+            evaluate_at(node.child("unevaluatedProperties"), value[name], name, "unevaluatedProperties")
           end
           evaluated.concat(unevaluated)
         end
         Evaluation.valid(evaluated_properties: evaluated.uniq)
       end
 
-      private def trial(node, value, path, schema_path)
-        saved_errors = @errors
+      private def trial(node, value)
+        saved_callback = @error_callback
         saved_error_count = @error_count
-        @errors = [] if saved_errors
+        @error_callback = nil
         @error_count = 0
-        result = evaluate(node, value, path, schema_path)
+        result = evaluate(node, value)
         result
       ensure
-        @errors = saved_errors
+        @error_callback = saved_callback
         @error_count = saved_error_count
       end
 
-      private def limit(schema, keyword, actual, path, schema_path)
+      private def limit(schema, keyword, actual)
         return unless schema.key?(keyword)
         return if yield(actual, schema[keyword])
 
-        add_error(keyword, path, append(schema_path, keyword), "size limit was exceeded")
+        add_error(keyword, "size limit was exceeded")
       end
 
       private def type?(value, type)
@@ -774,7 +789,7 @@ module Schemurai
         regexps[pattern] = Regexp.new(translated)
       end
 
-      private def check_content(schema, value, path, schema_path)
+      private def check_content(schema, value)
         decoded = value
         if schema["contentEncoding"] == "base64"
           decoded = Base64.strict_decode64(value)
@@ -784,20 +799,59 @@ module Schemurai
         JSON.parse(decoded)
       rescue ArgumentError, JSON::ParserError
         keyword = (schema["contentEncoding"] == "base64") ? "contentEncoding" : "contentMediaType"
-        add_error(keyword, path, append(schema_path, keyword), "string content is invalid")
+        add_error(keyword, "string content is invalid")
       end
 
-      private def add_error(keyword, instance_path, schema_path, message)
+      private def add_error(keyword, message, append_keyword: true)
         @error_count += 1
-        @errors << ValidationError.new(keyword: keyword, instance_path: instance_path, schema_path: schema_path, message: message) if @errors
+        if @error_callback
+          schema_keyword = append_keyword ? keyword : MISSING_SEGMENT
+          @error_callback.call(
+            ValidationError.new(
+              keyword: keyword,
+              instance_path: pointer(@instance_path),
+              schema_path: pointer(@schema_path, schema_keyword),
+              message: message
+            )
+          )
+        end
         false
       end
 
-      private def append(path, segment)
-        return if path.nil?
-
-        "#{path}/#{segment.to_s.gsub("~", "~0").gsub("/", "~1")}"
+      private def evaluate_at(node, instance, instance_segment, schema_segment, schema_child_segment = MISSING_SEGMENT)
+        @instance_path << instance_segment unless instance_segment.equal?(MISSING_SEGMENT)
+        @schema_path << schema_segment
+        @schema_path << schema_child_segment unless schema_child_segment.equal?(MISSING_SEGMENT)
+        evaluate(node, instance)
+      ensure
+        @schema_path.pop unless schema_child_segment.equal?(MISSING_SEGMENT)
+        @schema_path.pop
+        @instance_path.pop unless instance_segment.equal?(MISSING_SEGMENT)
       end
+
+      private def trial_at(node, instance, instance_segment, schema_segment, schema_child_segment = MISSING_SEGMENT)
+        @instance_path << instance_segment unless instance_segment.equal?(MISSING_SEGMENT)
+        @schema_path << schema_segment
+        @schema_path << schema_child_segment unless schema_child_segment.equal?(MISSING_SEGMENT)
+        trial(node, instance)
+      ensure
+        @schema_path.pop unless schema_child_segment.equal?(MISSING_SEGMENT)
+        @schema_path.pop
+        @instance_path.pop unless instance_segment.equal?(MISSING_SEGMENT)
+      end
+
+      private def pointer(path, final_segment = MISSING_SEGMENT)
+        pointer = +""
+        path.each { |segment| append_pointer_segment(pointer, segment) }
+        append_pointer_segment(pointer, final_segment) unless final_segment.equal?(MISSING_SEGMENT)
+        pointer
+      end
+
+      private def append_pointer_segment(pointer, segment)
+        pointer << "/" << segment.to_s.gsub("~", "~0").gsub("/", "~1")
+      end
+
+      private_constant :MISSING_SEGMENT
     end
   end
 end
