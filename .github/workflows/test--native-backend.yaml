@@ -38,8 +38,11 @@ jobs:
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
         with:
           ruby-version: ${{ matrix.ruby-version }}
-          bundler-cache: true
+          bundler-cache: ${{ matrix.ruby-version == '4.0' }}
           cache-version: native-${{ matrix.os }}-${{ matrix.ruby-version }}-${{ hashFiles('Gemfile.lock') }}
+      - name: Install dependencies for Ruby 3.4
+        if: matrix.ruby-version == '3.4'
+        run: bundle update --ruby
       - name: Configure native extension
         run: ruby extconf.rb
         working-directory: ext/schemurai
