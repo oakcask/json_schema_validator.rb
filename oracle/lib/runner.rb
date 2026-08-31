@@ -3,7 +3,11 @@
 require "digest"
 require "json"
 require_relative "case_catalog"
-require_relative "../../lib/schemurai"
+if ENV["SCHEMURAI_ORACLE_REQUIRE"] == "installed"
+  require "schemurai"
+else
+  require_relative "../../lib/schemurai"
+end
 
 module SchemuraiOracle
   class Runner

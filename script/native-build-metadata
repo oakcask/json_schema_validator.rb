@@ -1,0 +1,28 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "rbconfig"
+require "schemurai"
+require "schemurai/native"
+
+output_path = ARGV.fetch(0) { abort "usage: script/native-build-metadata OUTPUT" }
+header = File.read("ext/schemurai/generated_bootstrap.c").lines.take_while { |line| line.start_with?("/*", " *") }
+fingerprints = header.filter_map do |line|
+  match = line.match(/^ \* ([^:]+): (\S+)$/)
+  [match[1], match[2]] if match
+end.to_h
+required = %w[source generator intrinsics lowering_ir prism]
+missing = required.reject { |key| fingerprints.key?(key) }
+abort "generated source lacks build metadata: #{missing.join(", ")}" unless missing.empty?
+abort "native extension did not load strictly" unless Schemurai.compile(true, backend: :native).backend == :native
+
+metadata = {
+  "backend" => "native",
+  "ruby_description" => RUBY_DESCRIPTION,
+  "host" => RbConfig::CONFIG.fetch("host"),
+  "compiler" => RbConfig::CONFIG.fetch("CC"),
+  "fingerprints" => fingerprints
+}
+File.binwrite(output_path, JSON.pretty_generate(metadata) << "\n")
+puts JSON.generate(metadata.slice("backend", "ruby_description", "host", "compiler"))

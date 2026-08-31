@@ -149,6 +149,9 @@ the actual backend. Pass `backend: :ruby` to force the Ruby oracle. A forced
 unavailable; it never silently falls back. Environment-based selection and the
 Ruby-only loading guard are documented in
 [`docs/backend-selection.md`](docs/backend-selection.md).
+Compiler requirements, supported native build platforms, package behavior, and
+load troubleshooting are documented in
+[`docs/native-support.md`](docs/native-support.md).
 
 ## JSON Schema conformance
 

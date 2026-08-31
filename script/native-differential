@@ -3,8 +3,24 @@
 
 require "json"
 require "open3"
+require "optparse"
 require_relative "../oracle/lib/case_catalog"
 require_relative "../oracle/lib/comparator"
+
+options = {build_metadata: nil, installed: false, ruby_records: nil}
+OptionParser.new do |parser|
+  parser.on("--build-metadata PATH") { |path| options[:build_metadata] = path }
+  parser.on("--installed") { options[:installed] = true }
+  parser.on("--ruby-records PATH") { |path| options[:ruby_records] = path }
+end.parse!
+
+if options[:build_metadata]
+  metadata = JSON.parse(File.read(options[:build_metadata]))
+  abort "native build artifact has incorrect backend identity" unless metadata["backend"] == "native"
+  required = %w[source generator intrinsics lowering_ir prism]
+  missing = required.reject { |key| metadata.fetch("fingerprints", {}).key?(key) }
+  abort "native build artifact lacks fingerprints: #{missing.join(", ")}" unless missing.empty?
+end
 
 catalog = SchemuraiOracle::CaseCatalog.new
 selected = catalog.each_case.select { |record| record.classification == "selected" }
@@ -13,10 +29,11 @@ input = selected.map do |record|
 end.join("\n") << "\n"
 
 run = lambda do |backend|
+  load_paths = options[:installed] ? [] : ["-Ilib", "-Iext/schemurai"]
   output, error, status = Open3.capture3(
+    {"SCHEMURAI_ORACLE_REQUIRE" => options[:installed] ? "installed" : "checkout"},
     Gem.ruby,
-    "-Ilib",
-    "-Iext/schemurai",
+    *load_paths,
     "script/oracle-runner",
     "--backend",
     backend,
@@ -27,7 +44,11 @@ run = lambda do |backend|
   output.lines.map { |line| JSON.parse(line) }
 end
 
-ruby_records = run.call("ruby")
+ruby_records = if options[:ruby_records]
+  File.readlines(options[:ruby_records], chomp: true).reject(&:empty?).map { |line| JSON.parse(line) }
+else
+  run.call("ruby")
+end
 native_records = run.call("native")
 mismatches = SchemuraiOracle::Comparator.new.compare(ruby_records, native_records)
 unless mismatches.empty?

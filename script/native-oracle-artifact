@@ -1,0 +1,27 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "open3"
+require_relative "../oracle/lib/case_catalog"
+
+output_path = ARGV.fetch(0) { abort "usage: script/native-oracle-artifact OUTPUT" }
+catalog = SchemuraiOracle::CaseCatalog.new
+selected = catalog.each_case.select { |record| record.classification == "selected" }
+input = selected.map do |record|
+  JSON.generate("catalog_case" => record.id, "operation" => "validate")
+end.join("\n") << "\n"
+
+output, error, status = Open3.capture3(
+  {"SCHEMURAI_NATIVE_LOADING" => "prohibited"},
+  Gem.ruby,
+  "-Ilib",
+  "script/oracle-runner",
+  "--backend",
+  "ruby",
+  stdin_data: input
+)
+abort "ruby oracle runner failed:\n#{error}" unless status.success?
+
+File.binwrite(output_path, output)
+puts JSON.generate("backend" => "ruby", "records" => output.lines.length, "output" => output_path)

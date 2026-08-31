@@ -1,0 +1,250 @@
+name: test / native backend
+
+on:
+  push:
+    branches: [main]
+    paths: &native_paths
+      - .github/workflows/test--native-backend.yaml
+      - .gitmodules
+      - .ruby-version
+      - Gemfile
+      - Gemfile.lock
+      - schemurai.gemspec
+      - ext/**/*
+      - lib/**/*.rb
+      - native/**/*
+      - oracle/**/*
+      - script/generate-native
+      - script/native-build-metadata
+      - script/native-differential
+      - script/native-oracle-artifact
+      - script/oracle-*
+      - spec/**/*
+      - test/**/*
+      - tool/**/*
+  pull_request:
+    paths: *native_paths
+
+permissions:
+  contents: read
+
+env:
+  BUNDLE_ONLY: default generator lint test
+
+jobs:
+  ruby-oracle:
+    runs-on: ubuntu-latest
+    env:
+      SCHEMURAI_BACKEND: ruby
+      SCHEMURAI_NATIVE_LOADING: prohibited
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+          cache-version: ruby-oracle-${{ hashFiles('Gemfile.lock') }}
+      - name: Lint maintained Ruby source
+        run: bundle exec rubocop
+      - name: Run the complete Ruby oracle suite with native loading prohibited
+        run: bundle exec rspec
+      - name: Record the selected official-suite Ruby results
+        run: bundle exec ruby script/native-oracle-artifact ruby-oracle.jsonl
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ruby-oracle-results
+          path: ruby-oracle.jsonl
+          if-no-files-found: error
+
+  deterministic-generation:
+    needs: ruby-oracle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+          cache-version: deterministic-generation-${{ hashFiles('Gemfile.lock') }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ruby-oracle-results
+          path: verified-oracle
+      - name: Verify manifests, lowering, rejection contracts, and deterministic output
+        run: bundle exec rspec test/native_generator_test.rb
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: verified-generation
+          path: |
+            ext/schemurai/generated_bootstrap.c
+            native/cleanup_regions.json
+          if-no-files-found: error
+
+  native-build:
+    needs: deterministic-generation
+    strategy:
+      fail-fast: false
+      matrix: &native_matrix
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        ruby-version: ["4.0"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+          bundler-cache: true
+          cache-version: native-${{ matrix.os }}-${{ hashFiles('Gemfile.lock') }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: verified-generation
+          path: .
+      - name: Configure the verified native extension
+        run: ruby extconf.rb
+        working-directory: ext/schemurai
+      - name: Compile the verified native extension
+        run: make
+        working-directory: ext/schemurai
+      - name: Run native contracts and lifecycle tests
+        run: bundle exec rspec -Ilib -Iext/schemurai test/native_intrinsic_test.rb test/native_type_slice_test.rb test/native_schema_compilation_test.rb test/native_evaluator_test.rb test/native_lifecycle_test.rb
+      - name: Verify and record native build metadata
+        run: ruby -Ilib -Iext/schemurai script/native-build-metadata ext/schemurai/native-build-metadata.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-build-${{ matrix.os }}-ruby-${{ matrix.ruby-version }}
+          path: |
+            ext/schemurai/schemurai_native.*
+            ext/schemurai/native-build-metadata.json
+          if-no-files-found: error
+
+  address-sanitizer:
+    needs: deterministic-generation
+    runs-on: ubuntu-24.04
+    env:
+      ASAN_OPTIONS: detect_leaks=0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: asan-release
+          bundler-cache: true
+          cache-version: address-sanitizer-${{ hashFiles('Gemfile.lock') }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: verified-generation
+          path: .
+      - name: Configure native extension with address sanitizer
+        run: ruby extconf.rb
+        working-directory: ext/schemurai
+      - name: Compile address-sanitized verified source
+        run: make
+        working-directory: ext/schemurai
+      - name: Exercise native lifecycle under address sanitizer
+        run: bundle exec rspec -Ilib -Iext/schemurai test/native_lifecycle_test.rb
+
+  undefined-behavior-sanitizer:
+    needs: deterministic-generation
+    runs-on: ubuntu-latest
+    env:
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+          cache-version: undefined-behavior-sanitizer-${{ hashFiles('Gemfile.lock') }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: verified-generation
+          path: .
+      - name: Configure native extension with undefined behavior sanitizer
+        run: ruby extconf.rb
+        working-directory: ext/schemurai
+        env:
+          CFLAGS: -fsanitize=undefined -fno-omit-frame-pointer -O1
+          DLDFLAGS: -fsanitize=undefined
+      - name: Compile undefined-behavior-sanitized verified source
+        run: make
+        working-directory: ext/schemurai
+      - name: Exercise native lifecycle under undefined behavior sanitizer
+        run: bundle exec rspec -Ilib -Iext/schemurai test/native_lifecycle_test.rb
+
+  differential:
+    needs: [native-build, address-sanitizer, undefined-behavior-sanitizer]
+    strategy:
+      fail-fast: false
+      matrix: *native_matrix
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+          bundler-cache: true
+          cache-version: differential-${{ matrix.os }}-${{ hashFiles('Gemfile.lock') }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ruby-oracle-results
+          path: verified-oracle
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: native-build-${{ matrix.os }}-ruby-${{ matrix.ruby-version }}
+          path: ext/schemurai
+      - name: Compare native backend with the verified Ruby result stream
+        run: bundle exec ruby script/native-differential --build-metadata ext/schemurai/native-build-metadata.json --ruby-records verified-oracle/ruby-oracle.jsonl
+
+  package-build:
+    needs: differential
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: "4.0"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: verified-generation
+          path: .
+      - name: Build source gem from verified generated source
+        run: gem build schemurai.gemspec --output schemurai.gem
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: schemurai-source-gem
+          path: schemurai.gem
+          if-no-files-found: error
+
+  package-test:
+    needs: package-build
+    strategy:
+      fail-fast: false
+      matrix: *native_matrix
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: schemurai-source-gem
+      - name: Install source gem without generator dependencies
+        run: gem install --local schemurai.gem --no-document
+      - name: Run installed-package smoke test
+        run: ruby test/package_smoke_test.rb
+      - name: Compare installed Ruby and native backends
+        run: ruby script/native-differential --installed

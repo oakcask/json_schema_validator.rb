@@ -17,6 +17,9 @@ the complete supported keyword set, and has no dispatch back to a Ruby graph or
 Ruby evaluator instance. Separate-process differential CI compares ordered
 detailed results for every selected official-suite case.
 
+Workstream 7 is complete. Native lifecycle, concurrency, interruption, cleanup,
+GC compaction, and sanitizer coverage now protect the complete evaluator.
+
 This document describes the complete migration from the current Ruby
 implementation to a generated CRuby native extension. The work is not complete
 when a subset of keywords runs natively. It is complete only when the native
@@ -817,6 +820,13 @@ exceptions, interruption cleanup, and GC compaction.
   `rescue` location.
 
 ### 8. Complete CI and packaging
+
+Status: complete. Four ordered, artifact-connected gates prove the Ruby oracle,
+deterministic generation, native builds, and differential equivalence. CRuby
+4.0 source builds, full differentials, and clean source-gem installation run on
+Linux, macOS, and Windows; installed packages repeat smoke and differential
+verification without generator dependencies. Native compiler requirements,
+backend identity, and load troubleshooting are documented.
 
 - Connect the four gates with verified artifacts.
 - Add the supported Ruby and operating-system build matrices.
