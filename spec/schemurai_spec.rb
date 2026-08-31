@@ -45,6 +45,54 @@ RSpec.describe Schemurai do
     expect(result.errors.first).to be_a(described_class::ValidationError).and have_attributes(keyword: "minimum", instance_path: "")
   end
 
+  it "reports escaped instance and schema paths for nested errors" do
+    schema = {
+      "properties" => {
+        "a/b" => {
+          "allOf" => [
+            {"properties" => {"~key" => {"type" => "integer", "minimum" => 2}}}
+          ]
+        }
+      }
+    }
+
+    error = described_class.validate(schema, {"a/b" => {"~key" => 1}}).errors.fetch(0)
+
+    expect(error).to have_attributes(
+      keyword: "minimum",
+      instance_path: "/a~1b/~0key",
+      schema_path: "/properties/a~1b/allOf/0/properties/~0key/minimum"
+    )
+  end
+
+  it "only reports the committed error from failed alternatives" do
+    schema = {"anyOf" => [{"type" => "integer"}, {"type" => "string", "minLength" => 5}]}
+
+    errors = described_class.validate(schema, "x").errors
+
+    expect(errors.map(&:to_h)).to contain_exactly(
+      keyword: "anyOf",
+      instance_path: "",
+      schema_path: "/anyOf",
+      message: "no subschema matched"
+    )
+  end
+
+  it "keeps the evaluation path when an error occurs through a reference" do
+    schema = {
+      "properties" => {"x" => {"$ref" => "#/$defs/value"}},
+      "$defs" => {"value" => {"type" => "integer"}}
+    }
+
+    error = described_class.validate(schema, {"x" => "bad"}).errors.fetch(0)
+
+    expect(error).to have_attributes(
+      keyword: "type",
+      instance_path: "/x",
+      schema_path: "/properties/x/$ref/type"
+    )
+  end
+
   it "resolves registered external schemas", :aggregate_failures do
     schema = {"$ref" => "https://example.test/integer"}
     schemas = {"https://example.test/integer" => {"type" => "integer"}}
