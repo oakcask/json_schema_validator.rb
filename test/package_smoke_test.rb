@@ -50,16 +50,18 @@ order = {
   "created_at" => "2026-08-31T10:15:00+09:00"
 }
 
-validator = Schemurai.compile(schema, format: true)
-abort "expected the order to be valid" unless validator.valid?(order)
-
 invalid_order = order.merge(
   "items" => [order.fetch("items").first.merge("quantity" => 0)]
 )
-result = validator.validate(invalid_order)
-quantity_error = result.errors.any? do |error|
-  error.keyword == "minimum" && error.instance_path == "/items/0/quantity"
+%i[ruby native].each do |backend|
+  validator = Schemurai.compile(schema, format: true, backend: backend)
+  abort "expected the order to be valid with #{backend}" unless validator.valid?(order)
+
+  result = validator.validate(invalid_order)
+  quantity_error = result.errors.any? do |error|
+    error.keyword == "minimum" && error.instance_path == "/items/0/quantity"
+  end
+  abort "expected an invalid quantity error with #{backend}" unless quantity_error
 end
-abort "expected an invalid quantity error" unless quantity_error
 
 puts "Installed gem validated the sample order"

@@ -72,7 +72,11 @@ module Schemurai
 
     def initialize(graph, root, content:, format:, backend: :ruby)
       @backend = backend
-      @evaluator = Internal::Evaluator.new(graph, root, content: content, format: format)
+      @evaluator = if backend == :native
+        Native::Evaluator.new(graph, root, content: content, format: format)
+      else
+        Internal::Evaluator.new(graph, root, content: content, format: format)
+      end
     end
 
     def validate(instance)

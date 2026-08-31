@@ -1,0 +1,97 @@
+name: test / native backend
+
+on:
+  push:
+    branches: [main]
+    paths: &native_paths
+      - .github/workflows/test--native-backend.yaml
+      - .gitmodules
+      - .ruby-version
+      - Gemfile
+      - Gemfile.lock
+      - schemurai.gemspec
+      - ext/**/*
+      - lib/**/*
+      - oracle/**/*
+      - test/native_evaluator_test.rb
+  pull_request:
+    paths: *native_paths
+
+permissions:
+  contents: read
+
+env:
+  BUNDLE_ONLY: default lint test
+
+jobs:
+  native-differential:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        ruby-version: ["3.4", "4.0"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+          bundler-cache: true
+          cache-version: native-${{ matrix.os }}-${{ matrix.ruby-version }}-${{ hashFiles('Gemfile.lock') }}
+      - name: Configure native extension
+        run: ruby extconf.rb
+        working-directory: ext/schemurai
+      - name: Compile native extension
+        run: make
+        working-directory: ext/schemurai
+      - name: Compare native evaluator with the Ruby oracle
+        run: bundle exec rspec -Ilib -Iext/schemurai test/native_evaluator_test.rb
+
+  address-sanitizer:
+    runs-on: ubuntu-24.04
+    env:
+      ASAN_OPTIONS: detect_leaks=0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: asan-release
+          bundler-cache: true
+          cache-version: native-address-sanitizer-${{ hashFiles('Gemfile.lock') }}
+      - name: Configure native extension
+        run: ruby extconf.rb
+        working-directory: ext/schemurai
+      - name: Compile native extension
+        run: make
+        working-directory: ext/schemurai
+      - name: Exercise native evaluator under AddressSanitizer
+        run: bundle exec rspec -Ilib -Iext/schemurai test/native_evaluator_test.rb
+
+  undefined-behavior-sanitizer:
+    runs-on: ubuntu-latest
+    env:
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+          cache-version: native-undefined-sanitizer-${{ hashFiles('Gemfile.lock') }}
+      - name: Configure native extension
+        run: ruby extconf.rb
+        working-directory: ext/schemurai
+        env:
+          CFLAGS: -fsanitize=undefined -fno-omit-frame-pointer -O1
+          DLDFLAGS: -fsanitize=undefined
+      - name: Compile native extension
+        run: make
+        working-directory: ext/schemurai
+      - name: Exercise native evaluator under UndefinedBehaviorSanitizer
+        run: bundle exec rspec -Ilib -Iext/schemurai test/native_evaluator_test.rb
