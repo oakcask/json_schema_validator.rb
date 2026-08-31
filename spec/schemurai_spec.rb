@@ -2,7 +2,7 @@
 
 require_relative "spec_helper"
 
-RSpec.describe JsonSchemaValidator do
+RSpec.describe Schemurai do
   def format_assertion_schema(required, format:)
     meta_schema_uri = "https://example.test/format-assertion/#{required}"
     meta_schema = {
@@ -19,7 +19,7 @@ RSpec.describe JsonSchemaValidator do
   def expect_unsupported_format_to_be_rejected(required)
     schema, schemas = format_assertion_schema(required, format: "unknown")
     expect { described_class.compile(schema, schemas: schemas) }.to raise_error(
-      JsonSchemaValidator::UnsupportedFormatError,
+      Schemurai::UnsupportedFormatError,
       /unsupported format "unknown" required by Format-Assertion vocabulary/
     )
   end
@@ -128,14 +128,14 @@ RSpec.describe JsonSchemaValidator do
       registry.make_shareable
 
       expect { registry.compile(true) }
-        .to raise_error(JsonSchemaValidator::Error, /cannot compile schemas/)
+        .to raise_error(Schemurai::Error, /cannot compile schemas/)
       expect { registry.validator_for("urn:missing") }
-        .to raise_error(JsonSchemaValidator::ResolutionError, /unregistered schema URI/)
+        .to raise_error(Schemurai::ResolutionError, /unregistered schema URI/)
     end
 
     it "requires sharing before retrieving validators by URI" do
       expect { registry.validator_for("urn:wrapper") }
-        .to raise_error(JsonSchemaValidator::Error, /make_shareable must be called/)
+        .to raise_error(Schemurai::Error, /make_shareable must be called/)
     end
 
     it "reports unresolved references while becoming shareable" do
@@ -144,7 +144,7 @@ RSpec.describe JsonSchemaValidator do
       )
 
       expect { registry.make_shareable }
-        .to raise_error(JsonSchemaValidator::ResolutionError, /unresolvable reference/)
+        .to raise_error(Schemurai::ResolutionError, /unresolvable reference/)
     end
   end
 

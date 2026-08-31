@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module JsonSchemaValidator
+module Schemurai
   # Internal result of evaluating one schema location. Draft 7 only needs the
   # validity bit, but newer drafts also propagate the instance locations
   # consumed by applicators for unevaluatedProperties and unevaluatedItems.

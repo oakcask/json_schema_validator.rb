@@ -1,4 +1,4 @@
-# JSON Schema Validator
+# Schemurai
 
 A small, light-weight-dependency JSON Schema validator for Ruby supporting Draft 7,
 Draft 2019-09, and Draft 2020-12. It covers the required cases in the official
@@ -8,7 +8,7 @@ references. The dialect is selected from the schema's `$schema` URI; schemas tha
 omit `$schema` use Draft 7 for compatibility.
 
 ```ruby
-require "json_schema_validator"
+require "schemurai"
 
 schema = {
   "$schema" => "https://json-schema.org/draft/2020-12/schema",
@@ -58,7 +58,7 @@ order = {
   "created_at" => "2026-08-31T10:15:00+09:00"
 }
 
-validator = JsonSchemaValidator.compile(schema, format: true)
+validator = Schemurai.compile(schema, format: true)
 validator.valid?(order) # => true
 
 invalid_order = order.merge(
@@ -76,7 +76,7 @@ schema registry owns the compiled resource graph, so schemas compiled by the
 same registry also share their compiled external references.
 
 ```ruby
-registry = JsonSchemaValidator::SchemaRegistry.new(
+registry = Schemurai::SchemaRegistry.new(
   schemas: {
     "https://example.test/positive" => { "type" => "integer", "minimum" => 1 }
   }
@@ -88,16 +88,16 @@ validator.valid?(0) # => false
 validator.validate(0).errors # detailed errors, without recompiling the schema
 ```
 
-`JsonSchemaValidator.compile` is a convenience for compiling a standalone
+`Schemurai.compile` is a convenience for compiling a standalone
 validator. Repeatedly compiling the same schema object with one registry reuses
-its compiled schema graph. `JsonSchemaValidator.validate` and `.valid?` continue
+its compiled schema graph. `Schemurai.validate` and `.valid?` continue
 to accept raw JSON-like schemas and perform compilation internally.
 
 To resolve external references, pass a mapping of URIs to schemas using
 `schemas:`.
 
 ```ruby
-JsonSchemaValidator.valid?(
+Schemurai.valid?(
   { "$ref" => "https://example.test/positive" },
   3,
   schemas: { "https://example.test/positive" => { "type" => "integer", "minimum" => 1 } }
@@ -118,7 +118,7 @@ make the registry shareable first. This eagerly compiles every registered
 schema, resolves all references, and makes the registry deeply immutable.
 
 ```ruby
-registry = JsonSchemaValidator::SchemaRegistry.new(
+registry = Schemurai::SchemaRegistry.new(
   schemas: {
     "https://example.test/positive" => { "type" => "integer", "minimum" => 1 },
     "https://example.test/value" => { "$ref" => "https://example.test/positive" }

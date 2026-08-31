@@ -1,14 +1,14 @@
 # frozen_string_literal: true
 
 Gem::Specification.new do |spec|
-  spec.name = "json_schema_validator"
+  spec.name = "schemurai"
   spec.version = "0.1.0"
   spec.authors = ["Kuya KOHARA (oakcask)"]
   spec.email = ["kuya.kohara@gmail.com"]
 
   spec.summary = "A small, light-weight-dependency JSON Schema validator"
   spec.description = "Validates Ruby values against JSON Schema Draft 7, 2019-09, and 2020-12 schemas."
-  spec.homepage = "https://github.com/oakcask/json_schema_validator.rb"
+  spec.homepage = "https://github.com/oakcask/schemurai"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.2"
 

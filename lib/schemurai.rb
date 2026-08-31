@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require_relative "json_schema_validator/formats"
-require_relative "json_schema_validator/schema_graph"
-require_relative "json_schema_validator/evaluator"
+require_relative "schemurai/formats"
+require_relative "schemurai/schema_graph"
+require_relative "schemurai/evaluator"
 
-module JsonSchemaValidator
+module Schemurai
   class Error < StandardError; end
   class ResolutionError < Error; end
   class UnsupportedFormatError < Error; end

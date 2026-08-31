@@ -6,7 +6,7 @@ require "json"
 root = File.expand_path("..", __dir__)
 $LOAD_PATH.unshift(ENV.fetch("JSON_SCHEMA_VALIDATOR_LIB", File.join(root, "lib")))
 
-require "json_schema_validator"
+require "schemurai"
 require "json_schemer"
 
 suite_root = File.join(root, "references", "JSON-Schema-Test-Suite")
@@ -43,7 +43,7 @@ schemer_ref_resolver = schemer_schemas.to_proc
 adapters = {
   "lib" => {
     build: lambda { |group|
-      JsonSchemaValidator.compile(
+      Schemurai.compile(
         group.fetch(:schema),
         schemas: remotes,
         content: group.fetch(:content)

@@ -5,7 +5,7 @@ require "benchmark/ips"
 root = File.expand_path("..", __dir__)
 $LOAD_PATH.unshift(ENV.fetch("JSON_SCHEMA_VALIDATOR_LIB", File.join(root, "lib")))
 
-require "json_schema_validator"
+require "schemurai"
 require "json_schemer"
 
 schema = {
@@ -70,9 +70,9 @@ end
 documents = documents_with_expected.map(&:first)
 expected = documents_with_expected.map(&:last)
 
-registry = JsonSchemaValidator::SchemaRegistry.new
+registry = Schemurai::SchemaRegistry.new
 validators = {
-  "json_schema_validator" => registry.compile(schema),
+  "schemurai" => registry.compile(schema),
   "json_schemer" => JSONSchemer.schema(
     schema,
     meta_schema: JSONSchemer.draft202012,

@@ -2,21 +2,21 @@
 
 require_relative "../dialect_keywords"
 
-module JsonSchemaValidator
+module Schemurai
   module Internal
     module Dialects
-      module Draft7
-        META_SCHEMA_URI = "http://json-schema.org/draft-07/schema"
-        KEYWORDS = DialectKeywords.draft7
+      module Draft202012
+        META_SCHEMA_URI = "https://json-schema.org/draft/2020-12/schema"
+        KEYWORDS = DialectKeywords.draft2020_12
 
         DIALECT = Dialect.new(
-          name: :draft7,
+          name: :draft2020_12,
           uri: META_SCHEMA_URI,
           keywords: KEYWORDS,
-          ref_siblings: false
+          ref_siblings: true
         )
 
-        Dialect.register(DIALECT, default: true)
+        Dialect.register(DIALECT)
 
         private_constant :META_SCHEMA_URI, :KEYWORDS
       end

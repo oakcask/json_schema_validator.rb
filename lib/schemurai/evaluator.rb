@@ -4,7 +4,7 @@ require "json"
 require "base64"
 require_relative "evaluation"
 
-module JsonSchemaValidator
+module Schemurai
   module Internal
     class Evaluator
       def initialize(graph, root, content: false, format: false)

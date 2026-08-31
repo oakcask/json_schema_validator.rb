@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module JsonSchemaValidator
+module Schemurai
   module Internal
     class Dialect
       TYPE = 1

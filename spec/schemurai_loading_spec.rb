@@ -4,7 +4,7 @@ require "open3"
 require "rbconfig"
 require_relative "spec_helper"
 
-RSpec.describe JsonSchemaValidator do
+RSpec.describe Schemurai do
   def run_in_fresh_process(script)
     project_root = File.expand_path("..", __dir__)
     _, stderr, status = Open3.capture3(RbConfig.ruby, "-Ilib", "-e", script, chdir: project_root)
@@ -13,19 +13,19 @@ RSpec.describe JsonSchemaValidator do
 
   let(:draft2020_dialect_script) do
     <<~RUBY
-      require "json_schema_validator/dialects/draft2020_12"
+      require "schemurai/dialects/draft2020_12"
 
-      loaded = $LOADED_FEATURES.grep(%r{/json_schema_validator/(?:dialects|meta_schemas)/})
-      expected = ["json_schema_validator/dialects/draft2020_12.rb"]
+      loaded = $LOADED_FEATURES.grep(%r{/schemurai/(?:dialects|meta_schemas)/})
+      expected = ["schemurai/dialects/draft2020_12.rb"]
       abort loaded.inspect unless loaded.map { |path| path.split("/lib/").last } == expected
     RUBY
   end
 
   let(:draft2020_meta_schema_script) do
     <<~RUBY
-      require "json_schema_validator/meta_schemas/draft2020_12"
+      require "schemurai/meta_schemas/draft2020_12"
 
-      loaded = $LOADED_FEATURES.grep(%r{/json_schema_validator/(?:dialects/|dialect_keywords[.]rb)})
+      loaded = $LOADED_FEATURES.grep(%r{/schemurai/(?:dialects/|dialect_keywords[.]rb)})
       abort loaded.inspect unless loaded.empty?
     RUBY
   end

@@ -6,7 +6,7 @@ require "json"
 root = File.expand_path("..", __dir__)
 $LOAD_PATH.unshift(ENV.fetch("JSON_SCHEMA_VALIDATOR_LIB", File.join(root, "lib")))
 
-require "json_schema_validator"
+require "schemurai"
 require "json_schemer"
 
 suite = File.join(
@@ -52,9 +52,9 @@ official_cases_by_format = groups.group_by { |group| group.fetch(:format) }.tran
 end
 
 adapters = {
-  "json_schema_validator" => {
+  "schemurai" => {
     build: lambda { |schema|
-      JsonSchemaValidator.compile(schema, format: true)
+      Schemurai.compile(schema, format: true)
     },
     valid: ->(validator, data) { validator.valid?(data) }
   },
@@ -80,13 +80,13 @@ def validate_all(compiled, adapter)
 end
 
 prepared = adapters.transform_values { |adapter| build(groups, adapter) }
-primary = prepared.fetch("json_schema_validator")
+primary = prepared.fetch("schemurai")
 primary_wrong = primary.sum do |group|
   group.fetch(:tests).count do |test|
-    adapters.fetch("json_schema_validator").fetch(:valid).call(group.fetch(:validator), test.fetch("data")) != test.fetch("valid")
+    adapters.fetch("schemurai").fetch(:valid).call(group.fetch(:validator), test.fetch("data")) != test.fetch("valid")
   end
 end
-raise "json_schema_validator produced #{primary_wrong} wrong results" unless primary_wrong.zero?
+raise "schemurai produced #{primary_wrong} wrong results" unless primary_wrong.zero?
 
 excluded = []
 selected_tests = groups.each_index.map do |group_index|

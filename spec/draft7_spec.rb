@@ -16,9 +16,9 @@ RSpec.describe "JSON Schema Draft 7 official suite" do
     JSON.parse(File.read(file)).each do |group|
       group.fetch("tests").each do |test|
         it "#{File.basename(file)}: #{group.fetch("description")} / #{test.fetch("description")}", :aggregate_failures do
-          result = JsonSchemaValidator.validate(group.fetch("schema"), test.fetch("data"), schemas: remotes)
+          result = Schemurai.validate(group.fetch("schema"), test.fetch("data"), schemas: remotes)
           expect(result.valid?).to eq(test.fetch("valid")), -> { result.errors.map(&:to_h).inspect }
-          expect(JsonSchemaValidator.valid?(group.fetch("schema"), test.fetch("data"), schemas: remotes)).to eq(test.fetch("valid"))
+          expect(Schemurai.valid?(group.fetch("schema"), test.fetch("data"), schemas: remotes)).to eq(test.fetch("valid"))
         end
       end
     end
@@ -29,9 +29,9 @@ RSpec.describe "JSON Schema Draft 7 official suite" do
     JSON.parse(File.read(file)).each do |group|
       group.fetch("tests").each do |test|
         it "optional/#{File.basename(file)}: #{group.fetch("description")} / #{test.fetch("description")}", :aggregate_failures do
-          result = JsonSchemaValidator.validate(group.fetch("schema"), test.fetch("data"), schemas: remotes, content: true)
+          result = Schemurai.validate(group.fetch("schema"), test.fetch("data"), schemas: remotes, content: true)
           expect(result.valid?).to eq(test.fetch("valid")), -> { result.errors.map(&:to_h).inspect }
-          expect(JsonSchemaValidator.valid?(group.fetch("schema"), test.fetch("data"), schemas: remotes, content: true)).to eq(test.fetch("valid"))
+          expect(Schemurai.valid?(group.fetch("schema"), test.fetch("data"), schemas: remotes, content: true)).to eq(test.fetch("valid"))
         end
       end
     end
@@ -45,9 +45,9 @@ RSpec.describe "JSON Schema Draft 7 official suite" do
     JSON.parse(File.read(file)).each do |group|
       group.fetch("tests").each do |test|
         example.call "optional/format/#{File.basename(file)}: #{group.fetch("description")} / #{test.fetch("description")}", :aggregate_failures do
-          result = JsonSchemaValidator.validate(group.fetch("schema"), test.fetch("data"), schemas: remotes, format: true)
+          result = Schemurai.validate(group.fetch("schema"), test.fetch("data"), schemas: remotes, format: true)
           expect(result.valid?).to eq(test.fetch("valid")), -> { result.errors.map(&:to_h).inspect }
-          expect(JsonSchemaValidator.valid?(group.fetch("schema"), test.fetch("data"), schemas: remotes, format: true)).to eq(test.fetch("valid"))
+          expect(Schemurai.valid?(group.fetch("schema"), test.fetch("data"), schemas: remotes, format: true)).to eq(test.fetch("valid"))
         end
       end
     end

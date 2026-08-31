@@ -2,7 +2,7 @@
 
 require_relative "../dialect_keywords"
 
-module JsonSchemaValidator
+module Schemurai
   module Internal
     module Dialects
       module Draft201909

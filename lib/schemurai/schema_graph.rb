@@ -9,7 +9,7 @@ require_relative "meta_schemas/draft2019_09"
 require_relative "meta_schemas/draft2020_12"
 require_relative "schema_node"
 
-module JsonSchemaValidator
+module Schemurai
   module Internal
     class SchemaGraph
       class Resource

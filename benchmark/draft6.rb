@@ -6,7 +6,7 @@ require "json"
 root = File.expand_path("..", __dir__)
 $LOAD_PATH.unshift(ENV.fetch("JSON_SCHEMA_VALIDATOR_LIB", File.join(root, "lib")))
 
-require "json_schema_validator"
+require "schemurai"
 require "json-schema"
 require "json_schemer"
 
@@ -37,7 +37,7 @@ adapters = {
   "lib" => {
     prepare_build: -> {},
     build: lambda { |schema|
-      JsonSchemaValidator.compile(schema)
+      Schemurai.compile(schema)
     },
     valid: ->(validator, data) { validator.valid?(data) }
   },
