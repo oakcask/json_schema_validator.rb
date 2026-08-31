@@ -36,7 +36,7 @@ jobs:
         if: ${{ steps.release.outputs.prs_created == 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+          ref: ${{ fromJSON(steps.release.outputs.pr || '{}').headBranchName }}
           token: ${{ steps.gh-token-gen.outputs.token }}
           submodules: true
       - name: Set up Ruby for lockfile update
@@ -48,7 +48,7 @@ jobs:
       - name: Commit regenerated lockfile
         if: ${{ steps.release.outputs.prs_created == 'true' }}
         env:
-          RELEASE_BRANCH: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+          RELEASE_BRANCH: ${{ fromJSON(steps.release.outputs.pr || '{}').headBranchName }}
         run: |
           git config user.name "oakcask-actions[bot]"
           git config user.email "206904404+oakcask-actions[bot]@users.noreply.github.com"
