@@ -23,9 +23,34 @@ RSpec.describe "native concurrency and lifecycle safety" do
     global_ids = source.scan(/^static ID (\w+);$/).flatten
 
     expect(source).to include("rb_ext_ractor_safe(true)")
-    expect(global_values).to be_empty
-    expect(global_ids).not_to be_empty
-    global_ids.each do |identifier|
+    expect(global_values).to contain_exactly(
+      "mSchemurai",
+      "mSchemuraiNative",
+      "mSchemuraiNativeIntrinsics",
+      "cSchemuraiNativeGraph",
+      "sym_native",
+      "sym_root",
+      "sym_nodes",
+      "sym_uri_registry",
+      "sym_dynamic_anchors",
+      "sym_dynamic_scope",
+      "sym_schema",
+      "sym_dialect",
+      "sym_dialect_uri",
+      "sym_ref_siblings",
+      "sym_format_assertion",
+      "sym_supports_min_contains",
+      "sym_base_uri",
+      "sym_schema_path",
+      "sym_resource_path",
+      "sym_resource_root",
+      "sym_keyword_mask",
+      "sym_format",
+      "sym_children",
+      "sym_references"
+    )
+    expect(global_ids).to be_empty
+    global_values.each do |identifier|
       expect(source.scan(/\b#{Regexp.escape(identifier)}\s*=/).length).to eq(1)
     end
 

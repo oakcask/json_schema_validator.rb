@@ -1,5 +1,26 @@
 # Performance Benchmark
 
+## Production-default comparison
+
+`native_release.rb` is the retained Workstream 9 harness. It correctness-checks
+both backends before measuring the complete selected Draft 2020-12 corpus for
+build and suite workloads, then measures repeated validation, allocations,
+formats, detailed errors, native graph memory, threads, and Ractors separately.
+Run it against a built extension with and without YJIT:
+
+```sh
+ruby --disable-yjit -Ilib -Iext/schemurai benchmark/native_release.rb
+ruby --yjit -Ilib -Iext/schemurai benchmark/native_release.rb
+```
+
+Set `BENCHMARK_OUTPUT` to retain JSON directly. `BENCHMARK_SAMPLES`,
+`BENCHMARK_SUITE_ITERATIONS`, `BENCHMARK_REPEATED_ITERATIONS`,
+`BENCHMARK_FOCUSED_ITERATIONS`, `BENCHMARK_CONCURRENCY_WORKERS`,
+`BENCHMARK_CONCURRENCY_ITERATIONS`, and `BENCHMARK_WARMUP_ITERATIONS` control
+diagnostic runs. Default-selection records must use the committed defaults.
+The decision and interpretation are documented in
+`docs/native-performance.md`.
+
 ## Native `type` vertical slice
 
 `native_type_slice.rb` is the retained Workstream 3 checkpoint. It measures the

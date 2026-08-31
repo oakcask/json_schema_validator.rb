@@ -1,0 +1,157 @@
+{
+  "format_version": 1,
+  "benchmark": "native_production_default",
+  "ruby_version": "4.0.6",
+  "ruby_description": "ruby 4.0.6 (2026-07-14 revision 03b6d3f889) +PRISM [x86_64-linux]",
+  "platform": "x86_64-linux",
+  "compiler": "gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+  "compiler_flags": "-fstack-protector-strong -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2  -O3 -fno-fast-math -ggdb3 -Wall -Wextra -Wdeprecated-declarations -Wdiv-by-zero -Wduplicated-cond -Wimplicit-function-declaration -Wimplicit-int -Wpointer-arith -Wwrite-strings -Wold-style-definition -Wimplicit-fallthrough=0 -Wmissing-noreturn -Wno-cast-function-type -Wno-constant-logical-operand -Wno-long-long -Wno-missing-field-initializers -Wno-overlength-strings -Wno-packed-bitfield-compat -Wno-parentheses-equality -Wno-self-assign -Wno-tautological-compare -Wno-unused-parameter -Wno-unused-value -Wsuggest-attribute=format -Wsuggest-attribute=noreturn -Wunused-variable -Wmisleading-indentation -Wundef  -fPIC    -Wl,--compress-debug-sections=zlib -L/home/linuxbrew/.linuxbrew/Cellar/libyaml/0.2.5/lib -Wl,-rpath,/home/linuxbrew/.linuxbrew/Cellar/libyaml/0.2.5/lib -L/home/linuxbrew/.linuxbrew/Cellar/openssl@3/3.6.3/lib -Wl,-rpath,/home/linuxbrew/.linuxbrew/Cellar/openssl@3/3.6.3/lib",
+  "yjit": false,
+  "configuration": {
+    "samples": 5,
+    "suite_iterations_per_sample": 1,
+    "repeated_iterations_per_sample": 10000,
+    "focused_iterations_per_sample": 1000,
+    "concurrency_workers": 4,
+    "concurrency_iterations_per_worker": 2500,
+    "warmup_iterations": 100,
+    "measurement_method": "Process.clock_gettime(CLOCK_MONOTONIC)",
+    "allocation_method": "GC.stat(:total_allocated_objects)",
+    "native_memory_method": "ObjectSpace.memsize_of(native typed-data graph)"
+  },
+  "corpus": {
+    "dialect": "draft2020-12",
+    "selected_cases": 1877,
+    "compiled_schemas": 439,
+    "focused_error_width": 100
+  },
+  "correctness_sha256": "5660c6e9cfcc9070c4c3758b84f06bd37359938e7bc319d20dc8c0009a0b2828",
+  "workloads": {
+    "ruby": {
+      "build_seconds": [
+        0.011036385025363415,
+        0.010649860021658242,
+        0.01073264901060611,
+        0.011435952968895435,
+        0.009393446962349117
+      ],
+      "suite_seconds": [
+        0.01949917001184076,
+        0.05324768496211618,
+        0.02488282398553565,
+        0.021627566020470113,
+        0.021958202007226646
+      ],
+      "repeated_validation_seconds": [
+        0.048182955011725426,
+        0.04826890700496733,
+        0.0492936730151996,
+        0.04782601702027023,
+        0.047953681962098926
+      ],
+      "format_seconds": [
+        0.0014531720080412924,
+        0.0013996189809404314,
+        0.0014249940286390483,
+        0.00146681402111426,
+        0.0013918280019424856
+      ],
+      "detailed_error_seconds": [
+        0.17787001701071858,
+        0.15416851796908304,
+        0.15122628799872473,
+        0.17903723003109917,
+        0.15376657096203417
+      ]
+    },
+    "native": {
+      "build_seconds": [
+        1.9510852979728952,
+        1.8889988590381108,
+        1.961974520003423,
+        1.9668984289746732,
+        1.9945941619807854
+      ],
+      "suite_seconds": [
+        1.9987686569802463,
+        2.0273149480344728,
+        2.0127746440120973,
+        1.9222526280209422,
+        1.9065342379617505
+      ],
+      "repeated_validation_seconds": [
+        0.08627348399022594,
+        0.07407635595882311,
+        0.07395624200580642,
+        0.0725852309842594,
+        0.07298127701506019
+      ],
+      "format_seconds": [
+        0.0018057309789583087,
+        0.001769056951161474,
+        0.0017504299758002162,
+        0.0018302760436199605,
+        0.001817643002141267
+      ],
+      "detailed_error_seconds": [
+        0.24057844397611916,
+        0.3159285089932382,
+        0.25392343499697745,
+        0.24274195497855544,
+        0.2870040839770809
+      ]
+    }
+  },
+  "allocations": {
+    "ruby": {
+      "iterations": 10000,
+      "total_objects": 35016,
+      "objects_per_iteration": 3.5016
+    },
+    "native": {
+      "iterations": 10000,
+      "total_objects": 110015,
+      "objects_per_iteration": 11.0015
+    }
+  },
+  "native_memory": {
+    "graph_nodes": 6,
+    "graph_bytes": 568,
+    "single_node_graph_bytes": 168,
+    "inferred_node_record_bytes": 80.0
+  },
+  "concurrency": {
+    "thread_seconds": {
+      "ruby": [
+        0.05111453903373331,
+        0.05063290300313383,
+        0.05041967297438532,
+        0.050761797989252955,
+        0.048676709993742406
+      ],
+      "native": [
+        1.1326368470326997,
+        1.1444185280124657,
+        1.1635269530233927,
+        1.165126539010089,
+        1.1779619530425407
+      ]
+    },
+    "ractor_seconds": {
+      "ruby": [
+        0.022170885000377893,
+        0.023808610974811018,
+        0.024945316021330655,
+        0.021749301988165826,
+        0.02134274400305003
+      ],
+      "native": [
+        0.03970218601170927,
+        0.036324537999462336,
+        0.03929272899404168,
+        0.03826956998091191,
+        0.034805886971298605
+      ]
+    }
+  }
+}

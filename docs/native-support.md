@@ -33,8 +33,10 @@ without regeneration fails the byte-for-byte drift check.
 
 After installation, `Schemurai.backend` reports the production selection and a
 validator's `backend` reports what it actually uses. The production default is
-currently Ruby; request `backend: :native` when confirming the extension. That
-selection is strict and raises `LoadError` instead of falling back.
+Ruby based on the retained interpreter and YJIT measurements in
+`native-performance.md`; request `backend: :native` when confirming the
+extension. That selection is strict and raises `LoadError` instead of falling
+back.
 
 If native installation fails, first confirm that `ruby --version` reports CRuby
 4.0 and that the platform compiler and `make` are available in the same shell.

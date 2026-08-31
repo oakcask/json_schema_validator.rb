@@ -95,6 +95,19 @@ RSpec.describe Schemurai::NativeGenerator do
     end
   end
 
+  it "initializes immutable generated lookup values once" do
+    source = described_class.emit(
+      described_class.compile(File.read("native/source/bootstrap.rb")),
+      {},
+      described_class.compile_type_slice(File.read("lib/schemurai/type_slice.rb"))
+    )
+
+    expect(source).to include('rb_str_new_static("type", 4)')
+    expect(source.scan("rb_str_new_static").length).to eq(1)
+    expect(source.scan('rb_intern_const("Complex")').length).to eq(1)
+    expect(source).to include("schemurai_generated_id_finite", "schemurai_generated_id_to_i")
+  end
+
   it "reproduces the committed cleanup-region map byte for byte" do
     Dir.mktmpdir do |directory|
       output = File.join(directory, "cleanup_regions.json")

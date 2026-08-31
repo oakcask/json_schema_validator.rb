@@ -1,0 +1,20 @@
+{
+  "format_version": 1,
+  "selected_backend": "ruby",
+  "evidence": [
+    "baselines/native-production-default-ruby-4.0.6-x86_64-linux-interpreter.json",
+    "baselines/native-production-default-ruby-4.0.6-x86_64-linux-yjit.json"
+  ],
+  "required_timed_workloads": [
+    "build_seconds",
+    "suite_seconds",
+    "repeated_validation_seconds",
+    "format_seconds",
+    "detailed_error_seconds"
+  ],
+  "required_concurrency_workloads": [
+    "thread_seconds",
+    "ractor_seconds"
+  ],
+  "revisit_when": "Native has no material regression across correctness-gated interpreter and YJIT workloads, allocations, and supported concurrency modes."
+}

@@ -4,6 +4,7 @@ module Schemurai
   module Backend
     NATIVE_FEATURE = "schemurai/native"
     CHOICES = %i[default ruby native].freeze
+    PRODUCTION_DEFAULT = :ruby
 
     module_function def requested
       value = ENV.fetch("SCHEMURAI_BACKEND", "default").to_sym
@@ -22,7 +23,7 @@ module Schemurai
     end
 
     module_function def production_default
-      :ruby
+      PRODUCTION_DEFAULT
     end
 
     module_function def native_available?

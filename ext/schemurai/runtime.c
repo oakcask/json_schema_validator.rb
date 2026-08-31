@@ -1,12 +1,18 @@
 #include "ruby.h"
 #include "ruby/ractor.h"
 #include "ruby/thread.h"
+#include <stdint.h>
 #include <math.h>
 #include <stdbool.h>
 
 VALUE schemurai_generated_boolean_instance(VALUE self, VALUE instance);
-unsigned long schemurai_generated_compile_type(VALUE schema);
-int schemurai_generated_valid_type(unsigned long mask, VALUE instance);
+void schemurai_generated_init(void);
+uint8_t schemurai_generated_compile_type(VALUE schema);
+int schemurai_generated_valid_type(uint8_t mask, VALUE instance);
+
+#define SCHEMURAI_NODE_REF_SIBLINGS UINT8_C(1 << 0)
+#define SCHEMURAI_NODE_FORMAT_ASSERTION UINT8_C(1 << 1)
+#define SCHEMURAI_NODE_SUPPORTS_MIN_CONTAINS UINT8_C(1 << 2)
 
 typedef struct {
     VALUE schema;
@@ -18,12 +24,10 @@ typedef struct {
     VALUE format;
     VALUE children;
     VALUE references;
-    size_t resource_root;
-    unsigned long keyword_mask;
-    unsigned long type_mask;
-    bool ref_siblings;
-    bool format_assertion;
-    bool supports_min_contains;
+    uint32_t resource_root;
+    uint8_t keyword_mask;
+    uint8_t type_mask;
+    uint8_t flags;
 } schemurai_node_t;
 
 typedef struct {
@@ -36,27 +40,32 @@ typedef struct {
     bool shareable;
 } schemurai_graph_t;
 
-static ID id_root;
-static ID id_nodes;
-static ID id_uri_registry;
-static ID id_dynamic_anchors;
-static ID id_dynamic_scope;
-static ID id_schema;
-static ID id_dialect;
-static ID id_dialect_uri;
-static ID id_ref_siblings;
-static ID id_format_assertion;
-static ID id_supports_min_contains;
-static ID id_base_uri;
-static ID id_schema_path;
-static ID id_resource_path;
-static ID id_resource_root;
-static ID id_keyword_mask;
-static ID id_format;
-static ID id_children;
-static ID id_references;
+static VALUE mSchemurai;
+static VALUE mSchemuraiNative;
+static VALUE mSchemuraiNativeIntrinsics;
+static VALUE cSchemuraiNativeGraph;
+static VALUE sym_native;
+static VALUE sym_root;
+static VALUE sym_nodes;
+static VALUE sym_uri_registry;
+static VALUE sym_dynamic_anchors;
+static VALUE sym_dynamic_scope;
+static VALUE sym_schema;
+static VALUE sym_dialect;
+static VALUE sym_dialect_uri;
+static VALUE sym_ref_siblings;
+static VALUE sym_format_assertion;
+static VALUE sym_supports_min_contains;
+static VALUE sym_base_uri;
+static VALUE sym_schema_path;
+static VALUE sym_resource_path;
+static VALUE sym_resource_root;
+static VALUE sym_keyword_mask;
+static VALUE sym_format;
+static VALUE sym_children;
+static VALUE sym_references;
 
-/* These IDs are initialized once while the extension is loaded and are immutable afterwards. */
+/* These extension globals are initialized once and immutable afterwards. */
 
 static void
 schemurai_interrupt_checkpoint(size_t index)
@@ -68,9 +77,9 @@ schemurai_interrupt_checkpoint(size_t index)
 }
 
 static VALUE
-schemurai_hash_symbol(VALUE hash, ID key)
+schemurai_hash_symbol(VALUE hash, VALUE key)
 {
-    return rb_hash_aref(hash, ID2SYM(key));
+    return rb_hash_aref(hash, key);
 }
 
 static void
@@ -196,26 +205,29 @@ schemurai_graph_initialize(VALUE self, VALUE snapshot)
     long index;
 
     Check_Type(snapshot, T_HASH);
-    records = schemurai_hash_symbol(snapshot, id_nodes);
+    records = schemurai_hash_symbol(snapshot, sym_nodes);
     Check_Type(records, T_ARRAY);
-    Check_Type(schemurai_hash_symbol(snapshot, id_uri_registry), T_HASH);
-    Check_Type(schemurai_hash_symbol(snapshot, id_dynamic_anchors), T_HASH);
+    Check_Type(schemurai_hash_symbol(snapshot, sym_uri_registry), T_HASH);
+    Check_Type(schemurai_hash_symbol(snapshot, sym_dynamic_anchors), T_HASH);
     count = RARRAY_LEN(records);
     if (count == 0) rb_raise(rb_eArgError, "native graph snapshot has no nodes");
+    if ((uint64_t)count > UINT32_MAX) rb_raise(rb_eArgError, "native graph snapshot has too many nodes");
 
     TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
-    graph->root = NUM2SIZET(schemurai_hash_symbol(snapshot, id_root));
+    graph->root = NUM2SIZET(schemurai_hash_symbol(snapshot, sym_root));
     if (graph->root >= (size_t)count) rb_raise(rb_eArgError, "native graph root index is out of bounds");
 
     /* Validate all raising numeric conversions before acquiring native memory. */
     for (index = 0; index < count; index++) {
         schemurai_interrupt_checkpoint((size_t)index);
         VALUE record = rb_ary_entry(records, index);
+        unsigned int keyword_mask;
         Check_Type(record, T_HASH);
-        (void)NUM2ULONG(schemurai_hash_symbol(record, id_keyword_mask));
-        (void)NUM2SIZET(schemurai_hash_symbol(record, id_resource_root));
-        Check_Type(schemurai_hash_symbol(record, id_children), T_ARRAY);
-        Check_Type(schemurai_hash_symbol(record, id_references), T_ARRAY);
+        keyword_mask = NUM2UINT(schemurai_hash_symbol(record, sym_keyword_mask));
+        if (keyword_mask > UINT8_MAX) rb_raise(rb_eArgError, "native keyword mask is out of bounds");
+        (void)NUM2UINT(schemurai_hash_symbol(record, sym_resource_root));
+        Check_Type(schemurai_hash_symbol(record, sym_children), T_ARRAY);
+        Check_Type(schemurai_hash_symbol(record, sym_references), T_ARRAY);
     }
 
     graph->nodes = ALLOC_N(schemurai_node_t, (size_t)count);
@@ -223,28 +235,29 @@ schemurai_graph_initialize(VALUE self, VALUE snapshot)
         schemurai_interrupt_checkpoint((size_t)index);
         VALUE record = rb_ary_entry(records, index);
         schemurai_node_t *node = &graph->nodes[index];
-        node->schema = schemurai_hash_symbol(record, id_schema);
-        node->dialect = schemurai_hash_symbol(record, id_dialect);
-        node->dialect_uri = schemurai_hash_symbol(record, id_dialect_uri);
-        node->ref_siblings = RTEST(schemurai_hash_symbol(record, id_ref_siblings));
-        node->format_assertion = RTEST(schemurai_hash_symbol(record, id_format_assertion));
-        node->supports_min_contains = RTEST(schemurai_hash_symbol(record, id_supports_min_contains));
-        node->base_uri = schemurai_hash_symbol(record, id_base_uri);
-        node->schema_path = schemurai_hash_symbol(record, id_schema_path);
-        node->resource_path = schemurai_hash_symbol(record, id_resource_path);
-        node->resource_root = NUM2SIZET(schemurai_hash_symbol(record, id_resource_root));
+        node->schema = schemurai_hash_symbol(record, sym_schema);
+        node->dialect = schemurai_hash_symbol(record, sym_dialect);
+        node->dialect_uri = schemurai_hash_symbol(record, sym_dialect_uri);
+        node->flags = 0;
+        if (RTEST(schemurai_hash_symbol(record, sym_ref_siblings))) node->flags |= SCHEMURAI_NODE_REF_SIBLINGS;
+        if (RTEST(schemurai_hash_symbol(record, sym_format_assertion))) node->flags |= SCHEMURAI_NODE_FORMAT_ASSERTION;
+        if (RTEST(schemurai_hash_symbol(record, sym_supports_min_contains))) node->flags |= SCHEMURAI_NODE_SUPPORTS_MIN_CONTAINS;
+        node->base_uri = schemurai_hash_symbol(record, sym_base_uri);
+        node->schema_path = schemurai_hash_symbol(record, sym_schema_path);
+        node->resource_path = schemurai_hash_symbol(record, sym_resource_path);
+        node->resource_root = NUM2UINT(schemurai_hash_symbol(record, sym_resource_root));
         if (node->resource_root >= (size_t)count) rb_raise(rb_eArgError, "native graph resource root index is out of bounds");
-        node->keyword_mask = NUM2ULONG(schemurai_hash_symbol(record, id_keyword_mask));
-        node->format = schemurai_hash_symbol(record, id_format);
-        node->children = schemurai_hash_symbol(record, id_children);
-        node->references = schemurai_hash_symbol(record, id_references);
+        node->keyword_mask = (uint8_t)NUM2UINT(schemurai_hash_symbol(record, sym_keyword_mask));
+        node->format = schemurai_hash_symbol(record, sym_format);
+        node->children = schemurai_hash_symbol(record, sym_children);
+        node->references = schemurai_hash_symbol(record, sym_references);
         /* Publish only fully initialized VALUE fields to the GC callbacks. */
         graph->node_count = (size_t)index + 1;
         node->type_mask = schemurai_generated_compile_type(node->schema);
     }
-    graph->uri_registry = schemurai_hash_symbol(snapshot, id_uri_registry);
-    graph->dynamic_anchors = schemurai_hash_symbol(snapshot, id_dynamic_anchors);
-    graph->dynamic_scope = RTEST(schemurai_hash_symbol(snapshot, id_dynamic_scope));
+    graph->uri_registry = schemurai_hash_symbol(snapshot, sym_uri_registry);
+    graph->dynamic_anchors = schemurai_hash_symbol(snapshot, sym_dynamic_anchors);
+    graph->dynamic_scope = RTEST(schemurai_hash_symbol(snapshot, sym_dynamic_scope));
     return schemurai_graph_make_shareable(self);
 }
 
@@ -261,7 +274,7 @@ schemurai_graph_for_shareability_test(VALUE klass, VALUE schema)
         .schema = schema, .dialect = Qnil, .dialect_uri = Qnil, .base_uri = Qnil,
         .schema_path = Qnil, .resource_path = Qnil, .format = Qnil,
         .children = Qnil, .references = Qnil, .resource_root = 0, .keyword_mask = 0, .type_mask = 0,
-        .ref_siblings = false, .format_assertion = false, .supports_min_contains = false,
+        .flags = 0,
     };
     graph->uri_registry = Qnil;
     graph->dynamic_anchors = Qnil;
@@ -309,18 +322,18 @@ schemurai_graph_node_metadata(VALUE self, VALUE index_value)
     VALUE result = rb_hash_new();
     TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
     node = schemurai_graph_node_at(graph, index_value);
-    rb_hash_aset(result, ID2SYM(id_schema), node->schema);
-    rb_hash_aset(result, ID2SYM(id_dialect), node->dialect);
-    rb_hash_aset(result, ID2SYM(id_dialect_uri), node->dialect_uri);
-    rb_hash_aset(result, ID2SYM(id_ref_siblings), node->ref_siblings ? Qtrue : Qfalse);
-    rb_hash_aset(result, ID2SYM(id_format_assertion), node->format_assertion ? Qtrue : Qfalse);
-    rb_hash_aset(result, ID2SYM(id_supports_min_contains), node->supports_min_contains ? Qtrue : Qfalse);
-    rb_hash_aset(result, ID2SYM(id_base_uri), node->base_uri);
-    rb_hash_aset(result, ID2SYM(id_schema_path), node->schema_path);
-    rb_hash_aset(result, ID2SYM(id_resource_path), node->resource_path);
-    rb_hash_aset(result, ID2SYM(id_resource_root), SIZET2NUM(node->resource_root));
-    rb_hash_aset(result, ID2SYM(id_keyword_mask), ULONG2NUM(node->keyword_mask));
-    rb_hash_aset(result, ID2SYM(id_format), node->format);
+    rb_hash_aset(result, sym_schema, node->schema);
+    rb_hash_aset(result, sym_dialect, node->dialect);
+    rb_hash_aset(result, sym_dialect_uri, node->dialect_uri);
+    rb_hash_aset(result, sym_ref_siblings, (node->flags & SCHEMURAI_NODE_REF_SIBLINGS) ? Qtrue : Qfalse);
+    rb_hash_aset(result, sym_format_assertion, (node->flags & SCHEMURAI_NODE_FORMAT_ASSERTION) ? Qtrue : Qfalse);
+    rb_hash_aset(result, sym_supports_min_contains, (node->flags & SCHEMURAI_NODE_SUPPORTS_MIN_CONTAINS) ? Qtrue : Qfalse);
+    rb_hash_aset(result, sym_base_uri, node->base_uri);
+    rb_hash_aset(result, sym_schema_path, node->schema_path);
+    rb_hash_aset(result, sym_resource_path, node->resource_path);
+    rb_hash_aset(result, sym_resource_root, UINT2NUM(node->resource_root));
+    rb_hash_aset(result, sym_keyword_mask, UINT2NUM(node->keyword_mask));
+    rb_hash_aset(result, sym_format, node->format);
     return result;
 }
 
@@ -457,51 +470,53 @@ Init_schemurai_native(void)
 {
     rb_ext_ractor_safe(true);
 
-    VALUE schemurai = rb_define_module("Schemurai");
-    VALUE native = rb_define_module_under(schemurai, "Native");
-    VALUE intrinsics = rb_define_module_under(native, "Intrinsics");
-    VALUE graph = rb_define_class_under(native, "Graph", rb_cObject);
+    mSchemurai = rb_define_module("Schemurai");
+    mSchemuraiNative = rb_define_module_under(mSchemurai, "Native");
+    mSchemuraiNativeIntrinsics = rb_define_module_under(mSchemuraiNative, "Intrinsics");
+    cSchemuraiNativeGraph = rb_define_class_under(mSchemuraiNative, "Graph", rb_cObject);
 
-    id_root = rb_intern("root");
-    id_nodes = rb_intern("nodes");
-    id_uri_registry = rb_intern("uri_registry");
-    id_dynamic_anchors = rb_intern("dynamic_anchors");
-    id_dynamic_scope = rb_intern("dynamic_scope");
-    id_schema = rb_intern("schema");
-    id_dialect = rb_intern("dialect");
-    id_dialect_uri = rb_intern("dialect_uri");
-    id_ref_siblings = rb_intern("ref_siblings");
-    id_format_assertion = rb_intern("format_assertion");
-    id_supports_min_contains = rb_intern("supports_min_contains");
-    id_base_uri = rb_intern("base_uri");
-    id_schema_path = rb_intern("schema_path");
-    id_resource_path = rb_intern("resource_path");
-    id_resource_root = rb_intern("resource_root");
-    id_keyword_mask = rb_intern("keyword_mask");
-    id_format = rb_intern("format");
-    id_children = rb_intern("children");
-    id_references = rb_intern("references");
+    sym_native = ID2SYM(rb_intern_const("native"));
+    sym_root = ID2SYM(rb_intern_const("root"));
+    sym_nodes = ID2SYM(rb_intern_const("nodes"));
+    sym_uri_registry = ID2SYM(rb_intern_const("uri_registry"));
+    sym_dynamic_anchors = ID2SYM(rb_intern_const("dynamic_anchors"));
+    sym_dynamic_scope = ID2SYM(rb_intern_const("dynamic_scope"));
+    sym_schema = ID2SYM(rb_intern_const("schema"));
+    sym_dialect = ID2SYM(rb_intern_const("dialect"));
+    sym_dialect_uri = ID2SYM(rb_intern_const("dialect_uri"));
+    sym_ref_siblings = ID2SYM(rb_intern_const("ref_siblings"));
+    sym_format_assertion = ID2SYM(rb_intern_const("format_assertion"));
+    sym_supports_min_contains = ID2SYM(rb_intern_const("supports_min_contains"));
+    sym_base_uri = ID2SYM(rb_intern_const("base_uri"));
+    sym_schema_path = ID2SYM(rb_intern_const("schema_path"));
+    sym_resource_path = ID2SYM(rb_intern_const("resource_path"));
+    sym_resource_root = ID2SYM(rb_intern_const("resource_root"));
+    sym_keyword_mask = ID2SYM(rb_intern_const("keyword_mask"));
+    sym_format = ID2SYM(rb_intern_const("format"));
+    sym_children = ID2SYM(rb_intern_const("children"));
+    sym_references = ID2SYM(rb_intern_const("references"));
 
-    rb_define_const(native, "BACKEND", ID2SYM(rb_intern("native")));
-    rb_define_singleton_method(intrinsics, "boolean_instance?", schemurai_generated_boolean_instance, 1);
-    rb_define_singleton_method(intrinsics, "exact_builtin?", schemurai_exact_builtin, 2);
-    rb_define_singleton_method(intrinsics, "finite_float?", schemurai_finite_float, 1);
-    rb_define_singleton_method(intrinsics, "integral_float?", schemurai_integral_float, 1);
-    rb_define_singleton_method(intrinsics, "mask_intersects?", schemurai_mask_intersects, 2);
-    rb_define_alloc_func(graph, schemurai_graph_allocate);
-    rb_define_singleton_method(graph, "__for_shareability_test__", schemurai_graph_for_shareability_test, 1);
-    rb_define_method(graph, "initialize", schemurai_graph_initialize, 1);
-    rb_define_method(graph, "schema", schemurai_graph_schema, 0);
-    rb_define_method(graph, "node_count", schemurai_graph_node_count, 0);
-    rb_define_method(graph, "root_index", schemurai_graph_root_index, 0);
-    rb_define_method(graph, "node_metadata", schemurai_graph_node_metadata, 1);
-    rb_define_method(graph, "child", schemurai_graph_child, -1);
-    rb_define_method(graph, "resolve", schemurai_graph_resolve, 2);
-    rb_define_method(graph, "lookup", schemurai_graph_lookup, 1);
-    rb_define_method(graph, "dynamic_anchor", schemurai_graph_dynamic_anchor, 2);
-    rb_define_method(graph, "dynamic_scope?", schemurai_graph_dynamic_scope, 0);
-    rb_define_method(graph, "valid?", schemurai_graph_valid, 1);
-    rb_define_method(graph, "__make_shareable__", schemurai_graph_make_shareable, 0);
-    rb_define_method(graph, "shareable_state?", schemurai_graph_shareable_state, 0);
-    rb_define_method(graph, "__validate_repeated__", schemurai_graph_validate_repeated, 2);
+    schemurai_generated_init();
+    rb_define_const(mSchemuraiNative, "BACKEND", sym_native);
+    rb_define_singleton_method(mSchemuraiNativeIntrinsics, "boolean_instance?", schemurai_generated_boolean_instance, 1);
+    rb_define_singleton_method(mSchemuraiNativeIntrinsics, "exact_builtin?", schemurai_exact_builtin, 2);
+    rb_define_singleton_method(mSchemuraiNativeIntrinsics, "finite_float?", schemurai_finite_float, 1);
+    rb_define_singleton_method(mSchemuraiNativeIntrinsics, "integral_float?", schemurai_integral_float, 1);
+    rb_define_singleton_method(mSchemuraiNativeIntrinsics, "mask_intersects?", schemurai_mask_intersects, 2);
+    rb_define_alloc_func(cSchemuraiNativeGraph, schemurai_graph_allocate);
+    rb_define_singleton_method(cSchemuraiNativeGraph, "__for_shareability_test__", schemurai_graph_for_shareability_test, 1);
+    rb_define_method(cSchemuraiNativeGraph, "initialize", schemurai_graph_initialize, 1);
+    rb_define_method(cSchemuraiNativeGraph, "schema", schemurai_graph_schema, 0);
+    rb_define_method(cSchemuraiNativeGraph, "node_count", schemurai_graph_node_count, 0);
+    rb_define_method(cSchemuraiNativeGraph, "root_index", schemurai_graph_root_index, 0);
+    rb_define_method(cSchemuraiNativeGraph, "node_metadata", schemurai_graph_node_metadata, 1);
+    rb_define_method(cSchemuraiNativeGraph, "child", schemurai_graph_child, -1);
+    rb_define_method(cSchemuraiNativeGraph, "resolve", schemurai_graph_resolve, 2);
+    rb_define_method(cSchemuraiNativeGraph, "lookup", schemurai_graph_lookup, 1);
+    rb_define_method(cSchemuraiNativeGraph, "dynamic_anchor", schemurai_graph_dynamic_anchor, 2);
+    rb_define_method(cSchemuraiNativeGraph, "dynamic_scope?", schemurai_graph_dynamic_scope, 0);
+    rb_define_method(cSchemuraiNativeGraph, "valid?", schemurai_graph_valid, 1);
+    rb_define_method(cSchemuraiNativeGraph, "__make_shareable__", schemurai_graph_make_shareable, 0);
+    rb_define_method(cSchemuraiNativeGraph, "shareable_state?", schemurai_graph_shareable_state, 0);
+    rb_define_method(cSchemuraiNativeGraph, "__validate_repeated__", schemurai_graph_validate_repeated, 2);
 }

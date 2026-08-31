@@ -149,6 +149,8 @@ the actual backend. Pass `backend: :ruby` to force the Ruby oracle. A forced
 unavailable; it never silently falls back. Environment-based selection and the
 Ruby-only loading guard are documented in
 [`docs/backend-selection.md`](docs/backend-selection.md).
+The measured decision to retain Ruby as the production default is documented in
+[`docs/native-performance.md`](docs/native-performance.md).
 Compiler requirements, supported native build platforms, package behavior, and
 load troubleshooting are documented in
 [`docs/native-support.md`](docs/native-support.md).
@@ -221,6 +223,8 @@ ruby script/oracle-cases --summary
 The serialized oracle tools are `script/oracle-runner` and
 `script/oracle-compare`. Ruby interpreter and YJIT baseline instructions are in
 [`benchmark/baselines/README.md`](benchmark/baselines/README.md).
+The final Ruby/native production-default harness is described in
+[`benchmark/README.md`](benchmark/README.md).
 
 Run the linter with:
 

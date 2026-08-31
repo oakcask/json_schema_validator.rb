@@ -20,6 +20,13 @@ detailed results for every selected official-suite case.
 Workstream 7 is complete. Native lifecycle, concurrency, interruption, cleanup,
 GC compaction, and sanitizer coverage now protect the complete evaluator.
 
+Workstreams 8 and 9 are complete. Ordered CI and clean source-package gates
+cover the supported platform matrix. Retained interpreter and YJIT measurements
+cover build, suite, validation, allocation, native memory, thread, and Ractor
+workloads. They select Ruby as the production default because the native backend
+still has material regressions; native remains available through strict explicit
+selection.
+
 This document describes the complete migration from the current Ruby
 implementation to a generated CRuby native extension. The work is not complete
 when a subset of keywords runs natively. It is complete only when the native
@@ -835,6 +842,16 @@ backend identity, and load troubleshooting are documented.
 - Document compiler requirements, backend identity, and troubleshooting.
 
 ### 9. Measure and select the production default
+
+Status: complete. A correctness-gated harness records raw interpreter and YJIT
+samples for the official-suite build and execution workloads, repeated
+validation, Ruby allocations, formats, detailed errors, native typed-data
+memory, threads, and Ractors. The retained CRuby 4.0.6 measurements select Ruby
+as the production default: native regresses all timed workloads and allocates
+3.14 times as many Ruby objects for repeated validation. The decision record,
+reproduction configuration, raw samples, and concrete revisit rule are
+committed; a GVL-free snapshot remains unjustified without a profile showing it
+addresses a measured bottleneck.
 
 - Run existing build, suite, repeated-validation, allocation, format, and
   detailed-error benchmarks against both backends.

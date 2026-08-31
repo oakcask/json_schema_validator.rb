@@ -473,16 +473,33 @@ module Schemurai
         #include "ruby.h"
         #include "ruby/thread.h"
         #include <math.h>
+        #include <stdint.h>
         #include <string.h>
 
-        #define SCHEMURAI_TYPE_NULL (1UL << 0)
-        #define SCHEMURAI_TYPE_BOOLEAN (1UL << 1)
-        #define SCHEMURAI_TYPE_OBJECT (1UL << 2)
-        #define SCHEMURAI_TYPE_ARRAY (1UL << 3)
-        #define SCHEMURAI_TYPE_NUMBER (1UL << 4)
-        #define SCHEMURAI_TYPE_INTEGER (1UL << 5)
-        #define SCHEMURAI_TYPE_STRING (1UL << 6)
-        #define SCHEMURAI_TYPE_ANY (1UL << 7)
+        #define SCHEMURAI_TYPE_NULL UINT8_C(1 << 0)
+        #define SCHEMURAI_TYPE_BOOLEAN UINT8_C(1 << 1)
+        #define SCHEMURAI_TYPE_OBJECT UINT8_C(1 << 2)
+        #define SCHEMURAI_TYPE_ARRAY UINT8_C(1 << 3)
+        #define SCHEMURAI_TYPE_NUMBER UINT8_C(1 << 4)
+        #define SCHEMURAI_TYPE_INTEGER UINT8_C(1 << 5)
+        #define SCHEMURAI_TYPE_STRING UINT8_C(1 << 6)
+        #define SCHEMURAI_TYPE_ANY UINT8_C(1 << 7)
+
+        static VALUE schemurai_generated_type_key;
+        static VALUE schemurai_generated_complex_class;
+        static ID schemurai_generated_id_finite;
+        static ID schemurai_generated_id_to_i;
+
+        void
+        schemurai_generated_init(void)
+        {
+            schemurai_generated_type_key = rb_obj_freeze(rb_str_new_static("type", 4));
+            rb_global_variable(&schemurai_generated_type_key);
+            schemurai_generated_complex_class = rb_const_get(rb_cObject, rb_intern_const("Complex"));
+            rb_global_variable(&schemurai_generated_complex_class);
+            schemurai_generated_id_finite = rb_intern_const("#{compatibility_calls.fetch("type_integer_out_of_domain_finite").fetch("method")}");
+            schemurai_generated_id_to_i = rb_intern_const("#{compatibility_calls.fetch("type_integer_out_of_domain_to_i").fetch("method")}");
+        }
 
         VALUE
         schemurai_generated_boolean_instance(VALUE self, VALUE instance)
@@ -491,7 +508,7 @@ module Schemurai
             return #{expression} ? Qtrue : Qfalse;
         }
 
-        static unsigned long
+        static uint8_t
         schemurai_generated_type_name_mask(VALUE name)
         {
             const char *bytes;
@@ -504,17 +521,17 @@ module Schemurai
             return 0;
         }
 
-        unsigned long
+        uint8_t
         schemurai_generated_compile_type(VALUE schema)
         {
             VALUE type;
-            unsigned long mask = 0;
+            uint8_t mask = 0;
             long index;
 
             if (schema == Qtrue) return SCHEMURAI_TYPE_ANY;
             if (schema == Qfalse) return 0;
             Check_Type(schema, T_HASH);
-            type = rb_hash_lookup2(schema, rb_str_new_cstr("type"), Qundef);
+            type = rb_hash_lookup2(schema, schemurai_generated_type_key, Qundef);
             if (type == Qundef) return SCHEMURAI_TYPE_ANY;
             if (!RB_TYPE_P(type, T_ARRAY)) return schemurai_generated_type_name_mask(type);
             for (index = 0; index < RARRAY_LEN(type); index++) {
@@ -530,8 +547,8 @@ module Schemurai
         static int
         schemurai_generated_number_p(VALUE value)
         {
-            VALUE complex = rb_const_get(rb_cObject, rb_intern("Complex"));
-            return rb_obj_is_kind_of(value, rb_cNumeric) && !rb_obj_is_kind_of(value, complex);
+            return rb_obj_is_kind_of(value, rb_cNumeric) &&
+                !rb_obj_is_kind_of(value, schemurai_generated_complex_class);
         }
 
         static int
@@ -547,15 +564,15 @@ module Schemurai
             if (!schemurai_generated_number_p(value)) return 0;
 
             /* #{compatibility_calls.fetch("type_integer_out_of_domain_finite").fetch("classification")}: type_integer_out_of_domain_finite */
-            if (!RTEST(rb_funcall(value, rb_intern("#{compatibility_calls.fetch("type_integer_out_of_domain_finite").fetch("method")}"), 0))) return 0;
+            if (!RTEST(rb_funcall(value, schemurai_generated_id_finite, 0))) return 0;
             /* #{compatibility_calls.fetch("type_integer_out_of_domain_to_i").fetch("classification")}: type_integer_out_of_domain_to_i */
-            converted = rb_funcall(value, rb_intern("#{compatibility_calls.fetch("type_integer_out_of_domain_to_i").fetch("method")}"), 0);
+            converted = rb_funcall(value, schemurai_generated_id_to_i, 0);
             /* #{compatibility_calls.fetch("type_integer_out_of_domain_equality").fetch("classification")}: type_integer_out_of_domain_equality */
             return RTEST(rb_equal(converted, value));
         }
 
         int
-        schemurai_generated_valid_type(unsigned long mask, VALUE value)
+        schemurai_generated_valid_type(uint8_t mask, VALUE value)
         {
             if (mask & SCHEMURAI_TYPE_ANY) return 1;
             if (NIL_P(value)) return (mask & SCHEMURAI_TYPE_NULL) != 0;
