@@ -1,0 +1,17 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require_relative "../oracle/lib/case_catalog"
+
+catalog = SchemuraiOracle::CaseCatalog.new
+catalog.verify_counts!
+if ARGV.delete("--summary")
+  puts JSON.pretty_generate(catalog.configuration.fetch("dialects").to_h { |dialect, _| [dialect, catalog.counts(dialect)] })
+else
+  catalog.each_case.each do |record|
+    next unless record.classification == "selected"
+
+    puts JSON.generate("id" => record.id, "catalog_case" => record.id, "operation" => "validate")
+  end
+end

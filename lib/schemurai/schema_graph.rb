@@ -8,6 +8,7 @@ require_relative "meta_schemas/draft7"
 require_relative "meta_schemas/draft2019_09"
 require_relative "meta_schemas/draft2020_12"
 require_relative "schema_node"
+require_relative "schema_domain"
 
 module Schemurai
   module Internal
@@ -43,6 +44,7 @@ module Schemurai
       attr_reader :resources, :uri_registry, :nodes
 
       def initialize(schemas: {}, dialect: Dialect.resolve)
+        SchemaDomain.validate_registry!(schemas)
         @external_schemas = schemas.dup
         @indexed_external_schemas = nil
         @compiled_roots = {}.compare_by_identity
@@ -58,10 +60,10 @@ module Schemurai
         # evaluators sharing this graph may reach the dynamic reference.
         @dynamic_scope = !schemas.empty?
         @default_dialect = dialect
-        @shareable = false
       end
 
       def compile(schema, base_uri: nil, dialect: @default_dialect)
+        SchemaDomain.validate!(schema)
         roots = @compiled_roots.fetch(schema) { @compiled_roots[schema] = {} }
         cache_key = [base_uri.to_s, dialect]
         roots.fetch(cache_key) do
@@ -77,7 +79,7 @@ module Schemurai
           return resolved[reference]
         end
 
-        if @shareable
+        if Ractor.shareable?(self)
           raise ResolutionError, "reference #{reference.inspect} was not resolved before sharing"
         end
 
@@ -94,7 +96,7 @@ module Schemurai
       end
 
       def make_shareable
-        return self if @shareable
+        return self if Ractor.shareable?(self)
 
         @external_schemas.each_key do |uri|
           index_external(strip_fragment(uri.to_s), @default_dialect)
@@ -113,7 +115,6 @@ module Schemurai
         end
 
         @resolved_refs ||= {}
-        @shareable = true
         Ractor.make_shareable(self)
       end
 

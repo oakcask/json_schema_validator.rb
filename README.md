@@ -93,6 +93,11 @@ validator. Repeatedly compiling the same schema object with one registry reuses
 its compiled schema graph. `Schemurai.validate` and `.valid?` continue
 to accept raw JSON-like schemas and perform compilation internally.
 
+Schema inputs are checked recursively before compilation. They must use the
+built-in JSON-shaped Ruby classes described in
+[`docs/compatibility-domain.md`](docs/compatibility-domain.md); rejected values
+are never retained by a registry.
+
 To resolve external references, pass a mapping of URIs to schemas using
 `schemas:`.
 
@@ -135,6 +140,15 @@ validator = registry.validator_for("https://example.test/value")
 `validator_for` is read-only and may be called concurrently, while `compile` is
 no longer available. A `Validator` contains per-validation mutable state and
 must not be shared between threads or Ractors.
+
+### Backend selection
+
+`Schemurai.backend`, `SchemaRegistry#backend`, and `Validator#backend` expose
+the actual backend. Pass `backend: :ruby` to force the Ruby oracle. A forced
+`:native` selection is strict and raises `LoadError` while the native backend is
+unavailable; it never silently falls back. Environment-based selection and the
+Ruby-only loading guard are documented in
+[`docs/backend-selection.md`](docs/backend-selection.md).
 
 ## JSON Schema conformance
 
@@ -194,6 +208,16 @@ Run the test suite with:
 ```sh
 bundle exec rspec
 ```
+
+Verify the reviewed official-suite classifications with:
+
+```sh
+ruby script/oracle-cases --summary
+```
+
+The serialized oracle tools are `script/oracle-runner` and
+`script/oracle-compare`. Ruby interpreter and YJIT baseline instructions are in
+[`benchmark/baselines/README.md`](benchmark/baselines/README.md).
 
 Run the linter with:
 

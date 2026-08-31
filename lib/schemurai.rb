@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "schemurai/version"
+require_relative "schemurai/backend"
 require_relative "schemurai/formats"
 require_relative "schemurai/schema_graph"
 require_relative "schemurai/evaluator"
@@ -31,42 +32,46 @@ module Schemurai
   end
 
   class SchemaRegistry
-    def initialize(schemas: {})
+    attr_reader :backend
+
+    def initialize(schemas: {}, backend: Backend.requested)
+      @backend = Backend.resolve(backend)
       @graph = Internal::SchemaGraph.new(schemas: schemas)
-      @shareable = false
     end
 
     def compile(schema, base_uri: nil, content: false, format: false)
-      raise Error, "cannot compile schemas after the registry is made shareable" if @shareable
+      raise Error, "cannot compile schemas after the registry is made shareable" if shareable?
 
       root = @graph.compile(schema, base_uri: base_uri)
-      Validator.new(@graph, root, content: content, format: format)
+      Validator.new(@graph, root, content: content, format: format, backend: backend)
     end
 
     def make_shareable
-      return self if @shareable
+      return self if shareable?
 
       @graph.make_shareable
-      @shareable = true
       Ractor.make_shareable(self)
     end
 
     def shareable?
-      @shareable
+      Ractor.shareable?(self)
     end
 
     def validator_for(uri, content: false, format: false)
-      raise Error, "make_shareable must be called before retrieving validators by URI" unless @shareable
+      raise Error, "make_shareable must be called before retrieving validators by URI" unless shareable?
 
       root = @graph.node_at(uri)
       raise ResolutionError, "unregistered schema URI #{uri.inspect}" unless root
 
-      Validator.new(@graph, root, content: content, format: format)
+      Validator.new(@graph, root, content: content, format: format, backend: backend)
     end
   end
 
   class Validator
-    def initialize(graph, root, content:, format:)
+    attr_reader :backend
+
+    def initialize(graph, root, content:, format:, backend: :ruby)
+      @backend = backend
       @evaluator = Internal::Evaluator.new(graph, root, content: content, format: format)
     end
 
@@ -79,8 +84,12 @@ module Schemurai
     end
   end
 
-  module_function def compile(schema, schemas: {}, base_uri: nil, content: false, format: false)
-    SchemaRegistry.new(schemas: schemas).compile(
+  module_function def backend
+    Backend.resolve
+  end
+
+  module_function def compile(schema, schemas: {}, base_uri: nil, content: false, format: false, backend: Backend.requested)
+    SchemaRegistry.new(schemas: schemas, backend: backend).compile(
       schema,
       base_uri: base_uri,
       content: content,
@@ -88,23 +97,27 @@ module Schemurai
     )
   end
 
-  module_function def validate(schema, instance, schemas: {}, base_uri: nil, content: false, format: false)
+  module_function def validate(schema, instance, schemas: {}, base_uri: nil, content: false, format: false, backend: Backend.requested)
     compile(
       schema,
       schemas: schemas,
       base_uri: base_uri,
       content: content,
-      format: format
+      format: format,
+      backend: backend
     ).validate(instance)
   end
 
-  module_function def valid?(schema, instance, schemas: {}, base_uri: nil, content: false, format: false)
+  module_function def valid?(schema, instance, schemas: {}, base_uri: nil, content: false, format: false, backend: Backend.requested)
     compile(
       schema,
       schemas: schemas,
       base_uri: base_uri,
       content: content,
-      format: format
+      format: format,
+      backend: backend
     ).valid?(instance)
   end
+
+  private_constant :Backend
 end
