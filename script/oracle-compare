@@ -1,0 +1,19 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require_relative "../oracle/lib/comparator"
+
+abort "usage: ruby script/oracle-compare EXPECTED.jsonl ACTUAL.jsonl" unless ARGV.length == 2
+
+read_records = lambda do |path|
+  File.readlines(path, chomp: true).reject(&:empty?).map { |line| JSON.parse(line) }
+end
+
+mismatches = SchemuraiOracle::Comparator.new.compare(read_records.call(ARGV[0]), read_records.call(ARGV[1]))
+if mismatches.empty?
+  puts JSON.generate("matched" => true, "records" => read_records.call(ARGV[0]).length)
+else
+  warn JSON.pretty_generate("matched" => false, "mismatches" => mismatches)
+  exit 1
+end

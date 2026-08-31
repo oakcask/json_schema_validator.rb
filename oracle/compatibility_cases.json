@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "supported_domain": [
+    {"id": "exact-json-containers-and-scalars", "expected": {"valid": true}}
+  ],
+  "out_of_domain": [
+    {"id": "string-subclass", "expected": {"valid": true}},
+    {"id": "singleton-string-length", "expected": {"valid": true}},
+    {"id": "coercible-numeric-subclass", "expected": {"valid": true}},
+    {"id": "mutating-hash-iteration", "expected": {"valid": true}},
+    {"id": "exceptional-numeric-method", "expected": {"exception_class": "RuntimeError", "message": "finite failed"}}
+  ]
+}

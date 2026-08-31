@@ -9,6 +9,8 @@ on:
       - .gitmodules
       - Gemfile.lock
       - lib/**/*
+      - oracle/**/*
+      - script/oracle-*
       - spec/**/*
   pull_request:
     paths:
@@ -16,6 +18,8 @@ on:
       - .gitmodules
       - Gemfile.lock
       - lib/**/*
+      - oracle/**/*
+      - script/oracle-*
       - spec/**/*
 
 permissions:
@@ -23,6 +27,8 @@ permissions:
 
 env:
   BUNDLE_ONLY: default test
+  SCHEMURAI_BACKEND: ruby
+  SCHEMURAI_NATIVE_LOADING: prohibited
 
 jobs:
   test:
@@ -37,3 +43,5 @@ jobs:
           cache-version: ${{ hashFiles('Gemfile.lock') }}
       - name: Run Ruby tests
         run: bundle exec rspec
+      - name: Verify oracle case catalog
+        run: ruby script/oracle-cases --summary

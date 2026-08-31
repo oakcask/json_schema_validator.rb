@@ -1,0 +1,25 @@
+{
+  "format_version": 1,
+  "backend": "ruby",
+  "ruby_version": "4.0.6",
+  "ruby_description": "ruby 4.0.6 (2026-07-14 revision 03b6d3f889) +YJIT +PRISM [x86_64-linux]",
+  "platform": "x86_64-linux",
+  "yjit": true,
+  "configuration": {"samples": 5, "compile_iterations_per_sample": 500, "validation_iterations_per_sample": 10000},
+  "correctness_sha256": "355ab70cb43624913516ed1b5259587e8f73966a036b734be0a842cdfe41a6ad",
+  "compile_samples": [
+    {"seconds": 0.0374839780270122, "iterations_per_second": 13339.03246981106},
+    {"seconds": 0.008430956047959626, "iterations_per_second": 59305.25519949839},
+    {"seconds": 0.008332027005963027, "iterations_per_second": 60009.40703170576},
+    {"seconds": 0.008558902016375214, "iterations_per_second": 58418.708269282804},
+    {"seconds": 0.008389037975575775, "iterations_per_second": 59601.58977176199}
+  ],
+  "validation_samples": [
+    {"seconds": 0.017052098992280662, "iterations_per_second": 586438.068681569},
+    {"seconds": 0.016621318005491048, "iterations_per_second": 601637.0059640507},
+    {"seconds": 0.016609887999948114, "iterations_per_second": 602051.0192501743},
+    {"seconds": 0.016673504025675356, "iterations_per_second": 599753.9560131513},
+    {"seconds": 0.016835802991408855, "iterations_per_second": 593972.2628675866}
+  ],
+  "validation_allocations": {"iterations": 10000, "total_allocated_objects": 10003, "objects_per_iteration": 1.0003}
+}

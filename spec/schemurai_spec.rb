@@ -125,6 +125,27 @@ RSpec.describe Schemurai do
     expect(validator.validate("1")).not_to be_valid
   end
 
+  it "reuses a validator after an instance method raises", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
+    numeric_class = Class.new(Numeric) do
+      def finite? = raise("finite failed")
+    end
+    validator = described_class.compile({"type" => "integer"})
+
+    expect { validator.valid?(numeric_class.new) }.to raise_error(RuntimeError, "finite failed")
+    expect(validator.valid?(1)).to be(true)
+    expect(validator.validate("bad")).not_to be_valid
+  end
+
+  it "uses independent validators concurrently" do # rubocop:disable RSpec/ExampleLength
+    registry = described_class::SchemaRegistry.new
+    validators = 4.times.map { registry.compile({"type" => "integer", "minimum" => 1}) }
+    threads = validators.map do |validator|
+      Thread.new { 100.times.map { |index| validator.valid?(index) }.count(true) }
+    end
+
+    expect(threads.map(&:value)).to eq([99, 99, 99, 99])
+  end
+
   it "configures validators separately from the positional schema", :aggregate_failures do
     schema = {"type" => "string", "format" => "date"}
     annotation_validator = described_class.compile(schema)
@@ -209,6 +230,30 @@ RSpec.describe Schemurai do
 
       expect { registry.make_shareable }
         .to raise_error(Schemurai::ResolutionError, /unresolvable reference/)
+    end
+
+    it "freezes retained caller-owned schemas in place" do
+      schema = {"$id" => "urn:value", "type" => "integer"}
+      registry = described_class::SchemaRegistry.new(schemas: {"urn:value" => schema})
+
+      registry.make_shareable
+
+      expect(schema).to be_frozen
+    end
+
+    it "never reports shareable after an unexpected failed transition", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
+      registry = described_class::SchemaRegistry.new(schemas: {"urn:value" => true})
+      calls = 0
+      original = Ractor.method(:make_shareable)
+      allow(Ractor).to receive(:make_shareable) do |object|
+        calls += 1
+        raise TypeError, "injected shareability failure" if calls == 2
+
+        original.call(object)
+      end
+
+      expect { registry.make_shareable }.to raise_error(TypeError, "injected shareability failure")
+      expect(registry.shareable?).to eq(Ractor.shareable?(registry)).and be(false)
     end
   end
 

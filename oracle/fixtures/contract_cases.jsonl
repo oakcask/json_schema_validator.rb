@@ -1,0 +1,4 @@
+{"id":"valid-integer","operation":"validate","schema":{"type":"integer","minimum":2},"instance":3}
+{"id":"ordered-errors","operation":"validate","schema":{"type":"object","required":["first","second"],"properties":{"value":{"type":"integer","minimum":2}}},"instance":{"value":1}}
+{"id":"unresolved-reference","operation":"validate","schema":{"$ref":"urn:missing"},"instance":null}
+{"id":"compile-identity","operation":"compile","schema":true}
