@@ -6,7 +6,7 @@ require "prism"
 
 module Schemurai
   module NativeGenerator
-    VERSION = 1
+    VERSION = 2
 
     class GenerationError < StandardError; end
 
@@ -27,7 +27,14 @@ module Schemurai
       raise GenerationError, "translation-unit manifest version must be 1" unless units.fetch("version") == 1
 
       known_types = ir.fetch("types").keys
+      ast_forms = ir.fetch("ast_forms")
+      duplicate_forms = ast_forms.values.flatten.tally.select { |_name, count| count > 1 }.keys
+      raise GenerationError, "AST forms must have one lowering category: #{duplicate_forms.first}" unless duplicate_forms.empty?
+
       units.fetch("units").each do |unit|
+        unless %w[emitted syntax_audited].include?(unit.fetch("stage"))
+          raise GenerationError, "unknown translation stage #{unit.fetch("stage")} in #{unit.fetch("name")}"
+        end
         source = root.join(unit.fetch("source"))
         raise GenerationError, "missing translation source #{unit.fetch("source")}" unless source.file?
 
@@ -45,6 +52,8 @@ module Schemurai
           raise GenerationError, "unknown IR type #{unknown.first} in #{unit.fetch("name")}" unless unknown.empty?
         end
       end
+
+      audit_translation_units!(ir:, units:)
 
       required = %w[name ruby_forms operands result ruby_semantics c_lowering allocates invokes_ruby raises triggers_gc gvl cleanup rooting restriction refinement guard dispatch available fixtures]
       entries = intrinsics.fetch("intrinsics") + intrinsics.fetch("graph_intrinsics")
@@ -66,6 +75,10 @@ module Schemurai
         end
       end
 
+      intrinsics.fetch("owned_regions").each do |region|
+        validate_owned_region!(region, entries:)
+      end
+
       compatibility_ids = load_json("oracle/compatibility_cases.json").fetch("out_of_domain")
         .map { |fixture| fixture.fetch("id") }
       intrinsics.fetch("generic_calls").each do |call_site|
@@ -83,6 +96,113 @@ module Schemurai
       end
 
       true
+    end
+
+    module_function def validate_owned_region!(region, entries: nil)
+      entries ||= begin
+        manifest = load_json("native/intrinsics.json")
+        manifest.fetch("intrinsics") + manifest.fetch("graph_intrinsics")
+      end
+      required = %w[name resources operations cleanup forced_exceptions]
+      missing = required.reject { |field| region.key?(field) }
+      raise GenerationError, "owned region lacks #{missing.join(", ")}" unless missing.empty?
+      raise GenerationError, "owned region #{region.fetch("name")} has no resources" if region.fetch("resources").empty?
+      unless region.fetch("cleanup") == "idempotent_ensure"
+        raise GenerationError, "owned region #{region.fetch("name")} must use idempotent ensure cleanup"
+      end
+
+      by_name = entries.to_h { |entry| [entry.fetch("name"), entry] }
+      region.fetch("operations").each do |name|
+        specification = by_name[name]
+        raise GenerationError, "unknown intrinsic #{name} in owned region #{region.fetch("name")}" unless specification
+        next unless specification.fetch("allocates") || specification.fetch("invokes_ruby")
+        next if region.fetch("forced_exceptions").include?(name)
+
+        raise GenerationError, "owned region #{region.fetch("name")} lacks a forced-exception fixture for #{name}"
+      end
+      true
+    end
+
+    module_function def audit_translation_units!(ir: load_json("native/lowering_ir.json"), units: load_json("native/translation_units.json"))
+      inventories = {}
+
+      units.fetch("units").each do |unit|
+        source_name = unit.fetch("source")
+        source = root.join(source_name)
+        parsed = Prism.parse(source.read)
+        unless parsed.success?
+          failure = parsed.errors.first
+          raise GenerationError, "#{source_name}:#{failure.location.start_line}: #{failure.message}"
+        end
+
+        inventory = Hash.new(0)
+        lower_syntax_node(parsed.value, source_name:, unit_name: unit.fetch("name"), ir:, inventory:)
+        inventories[unit.fetch("name")] = inventory.sort.to_h
+      end
+
+      inventories
+    end
+
+    module_function def lower_translation_units!(ir: load_json("native/lowering_ir.json"), units: load_json("native/translation_units.json"))
+      units.fetch("units").to_h do |unit|
+        source_name = unit.fetch("source")
+        parsed = Prism.parse(root.join(source_name).read)
+        unless parsed.success?
+          failure = parsed.errors.first
+          raise GenerationError, "#{source_name}:#{failure.location.start_line}: #{failure.message}"
+        end
+
+        roots = unit.fetch("roots").map do |entry|
+          method = find_method(parsed.value, entry.fetch("method").to_sym)
+          unless method
+            raise GenerationError, "#{source_name}:1: missing translation root #{entry.fetch("root")}"
+          end
+          {
+            "root" => entry.fetch("root"),
+            "entry" => entry.fetch("entry"),
+            "result" => entry.fetch("result"),
+            "body" => lower_syntax_node(
+              method.body,
+              source_name:,
+              unit_name: unit.fetch("name"),
+              ir:
+            )
+          }
+        end
+        [unit.fetch("name"), {"stage" => unit.fetch("stage"), "roots" => roots}]
+      end
+    end
+
+    module_function def lower_syntax_node(node, source_name:, unit_name:, ir:, inventory: nil)
+      return nil unless node
+
+      categories = ir.fetch("ast_forms").each_with_object({}) do |(category, names), result|
+        names.each { |name| result[name] = category }
+      end
+      name = node.class.name.delete_prefix("Prism::")
+      category = categories[name]
+      unless category
+        raise GenerationError, "#{source_name}:#{node.location.start_line}: unsupported syntax #{name} in translation unit #{unit_name}"
+      end
+      inventory[category] += 1 if inventory
+      {
+        "form" => name,
+        "category" => category,
+        "ir_type" => syntax_ir_type(category),
+        "line" => node.location.start_line,
+        "children" => node.compact_child_nodes.map do |child|
+          lower_syntax_node(child, source_name:, unit_name:, ir:, inventory:)
+        end
+      }
+    end
+
+    module_function def syntax_ir_type(category)
+      case category
+      when "control_flow", "iterator", "exception_region", "structure"
+        "control_flow_region"
+      else
+        "ruby_value"
+      end
     end
 
     module_function def compile(source, source_name: "(source)")
@@ -111,6 +231,7 @@ module Schemurai
       type_source_path = root.join("lib/schemurai/type_slice.rb")
       ir = compile(source_path.read, source_name: "native/source/bootstrap.rb")
       type_ir = compile_type_slice(type_source_path.read)
+      translation_units = load_json("native/translation_units.json")
       fingerprints = {
         "generator" => Digest::SHA256.file(__FILE__).hexdigest,
         "source" => Digest::SHA256.file(source_path).hexdigest,
@@ -121,6 +242,12 @@ module Schemurai
         "prism" => Prism::VERSION,
         "generator_version" => VERSION.to_s
       }
+      translation_units.fetch("units").map { |unit| unit.fetch("source") }.uniq.sort.each do |source|
+        fingerprints["translation_source:#{source}"] = Digest::SHA256.file(root.join(source)).hexdigest
+      end
+      lower_translation_units!(units: translation_units).sort.each do |name, lowered|
+        fingerprints["translation_ir:#{name}"] = Digest::SHA256.hexdigest(JSON.generate(lowered))
+      end
       body = emit(ir, fingerprints, type_ir)
       Pathname(output).binwrite(body)
     end
@@ -199,6 +326,24 @@ module Schemurai
       case node
       when Prism::OrNode
         {op: :or, left: lower(node.left, source_name), right: lower(node.right, source_name)}
+      when Prism::AndNode
+        {op: :and, left: lower(node.left, source_name), right: lower(node.right, source_name)}
+      when Prism::BeginNode
+        lower_begin(node, source_name)
+      when Prism::EnsureNode
+        {
+          op: :ensure_region,
+          body: [],
+          cleanup: lower_statements(node.statements, source_name),
+          cleanup_policy: :idempotent
+        }
+      when Prism::BlockNode
+        {
+          op: :iterator_region,
+          call: lower(node.call, source_name),
+          parameters: node.parameters&.parameters&.requireds&.map(&:name) || [],
+          body: lower_statements(node.body, source_name)
+        }
       when Prism::CallNode
         lower_call(node, source_name)
       else
@@ -206,6 +351,31 @@ module Schemurai
         kind = node ? node.class.name.delete_prefix("Prism::") : "empty body"
         raise GenerationError, "#{source_name}:#{location}: unsupported syntax #{kind}"
       end
+    end
+
+    module_function def lower_begin(node, source_name)
+      body = lower_statements(node.statements, source_name)
+      return {op: :sequence, expressions: body} unless node.rescue_clause || node.ensure_clause
+
+      protected_region = {op: :protected_region, body:, rescue: nil}
+      if node.rescue_clause
+        protected_region[:rescue] = lower_statements(node.rescue_clause.statements, source_name)
+      end
+      return protected_region unless node.ensure_clause
+
+      {
+        op: :ensure_region,
+        body: [protected_region],
+        cleanup: lower_statements(node.ensure_clause.statements, source_name),
+        cleanup_policy: :idempotent
+      }
+    end
+
+    module_function def lower_statements(node, source_name)
+      return [] unless node
+
+      statements = node.is_a?(Prism::StatementsNode) ? node.body : [node]
+      statements.map { |statement| lower(statement, source_name) }
     end
 
     module_function def lower_call(node, source_name)
@@ -247,6 +417,11 @@ module Schemurai
         %(    if (length == #{name.length} && memcmp(bytes, "#{name}", #{name.length}) == 0) return #{type_bits.fetch(name)};)
       end.join("\n")
       metadata = fingerprints.sort.map { |key, value| " * #{key}: #{value}" }.join("\n")
+      compatibility_calls = %w[
+        type_integer_out_of_domain_finite
+        type_integer_out_of_domain_to_i
+        type_integer_out_of_domain_equality
+      ].to_h { |site| [site, generic_call(site)] }
       <<~C
         /* Generated by tool/native_generator.rb. Do not edit.
         #{metadata}
@@ -324,11 +499,11 @@ module Schemurai
             }
             if (!schemurai_generated_number_p(value)) return 0;
 
-            /* cold_out_of_domain_compatibility: type_integer_out_of_domain_finite */
-            if (!RTEST(rb_funcall(value, rb_intern("finite?"), 0))) return 0;
-            /* cold_out_of_domain_compatibility: type_integer_out_of_domain_to_i */
-            converted = rb_funcall(value, rb_intern("to_i"), 0);
-            /* cold_out_of_domain_compatibility: type_integer_out_of_domain_equality */
+            /* #{compatibility_calls.fetch("type_integer_out_of_domain_finite").fetch("classification")}: type_integer_out_of_domain_finite */
+            if (!RTEST(rb_funcall(value, rb_intern("#{compatibility_calls.fetch("type_integer_out_of_domain_finite").fetch("method")}"), 0))) return 0;
+            /* #{compatibility_calls.fetch("type_integer_out_of_domain_to_i").fetch("classification")}: type_integer_out_of_domain_to_i */
+            converted = rb_funcall(value, rb_intern("#{compatibility_calls.fetch("type_integer_out_of_domain_to_i").fetch("method")}"), 0);
+            /* #{compatibility_calls.fetch("type_integer_out_of_domain_equality").fetch("classification")}: type_integer_out_of_domain_equality */
             return RTEST(rb_equal(converted, value));
         }
 
@@ -361,6 +536,8 @@ module Schemurai
       case node.fetch(:op)
       when :or
         "(#{emit_expression(node.fetch(:left))} || #{emit_expression(node.fetch(:right))})"
+      when :and
+        "(#{emit_expression(node.fetch(:left))} && #{emit_expression(node.fetch(:right))})"
       when :intrinsic
         specification = intrinsic(node.fetch(:name))
         operands = node.fetch(:operands).map { |operand| emit_operand(operand) }
@@ -381,9 +558,48 @@ module Schemurai
       end
     end
 
+    module_function def emit_control_region(node, body_function:, state:, cleanup_function: nil, callback_function: nil, method_id: nil)
+      identifiers = [body_function, cleanup_function, callback_function].compact
+      unless identifiers.all? { |identifier| /\A[a-zA-Z_][a-zA-Z0-9_]*\z/.match?(identifier) }
+        raise GenerationError, "control-region callbacks must be C identifiers"
+      end
+
+      case node.fetch(:op)
+      when :ensure_region
+        raise GenerationError, "ensure region requires cleanup callback" unless cleanup_function
+
+        "rb_ensure(#{body_function}, #{state}, #{cleanup_function}, #{state})"
+      when :protected_region
+        "rb_protect(#{body_function}, #{state}, &state_tag)"
+      when :iterator_region
+        raise GenerationError, "iterator region requires callback and method ID" unless callback_function && method_id
+
+        "rb_block_call(#{state}, #{method_id}, 0, NULL, #{callback_function}, Qnil)"
+      else
+        raise GenerationError, "unknown control region #{node.fetch(:op)}"
+      end
+    end
+
+    module_function def emit_graph_access(name, receiver:, operands:)
+      manifest = load_json("native/intrinsics.json")
+      specification = manifest.fetch("graph_intrinsics").find { |entry| entry.fetch("name") == name }
+      raise GenerationError, "missing graph intrinsic #{name}" unless specification
+      unless operands.length == specification.fetch("operands").length
+        raise GenerationError, "graph intrinsic #{name} expects #{specification.fetch("operands").length} operands"
+      end
+
+      arguments = [receiver, *operands].join(", ")
+      "#{specification.fetch("c_lowering")}(#{arguments})"
+    end
+
     module_function def intrinsic(name)
       entries = load_json("native/intrinsics.json").fetch("intrinsics")
       entries.find { |entry| entry.fetch("name") == name } || raise(GenerationError, "missing intrinsic #{name}")
+    end
+
+    module_function def generic_call(site)
+      calls = load_json("native/intrinsics.json").fetch("generic_calls")
+      calls.find { |call| call.fetch("site") == site } || raise(GenerationError, "missing generic call site #{site}")
     end
   end
 end

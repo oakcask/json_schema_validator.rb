@@ -15,3 +15,10 @@ The generated tree remains canonical across supported minors: each minor must
 reproduce it byte-for-byte rather than committing a version-specific variant.
 Prism is a generator-only dependency. It is not needed when installing the
 source gem because generated C is committed and packaged.
+
+The source gem also retains the repository-owned generator, translation
+sources, typed IR and intrinsic manifests, and generation entry point as build
+provenance. Installation still compiles only the committed generated C and does
+not execute the generator. Every maintained translation source and its lowered
+syntax IR are fingerprinted in that C file, so changing any translation unit
+without regeneration fails the byte-for-byte drift check.

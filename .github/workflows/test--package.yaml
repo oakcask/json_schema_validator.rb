@@ -10,6 +10,9 @@ on:
       - schemurai.gemspec
       - ext/**/*
       - lib/**/*
+      - native/**/*
+      - script/generate-native
+      - tool/native_generator.rb
       - README.md
       - test/package_smoke_test.rb
   pull_request:
@@ -19,6 +22,9 @@ on:
       - schemurai.gemspec
       - ext/**/*
       - lib/**/*
+      - native/**/*
+      - script/generate-native
+      - tool/native_generator.rb
       - README.md
       - test/package_smoke_test.rb
 

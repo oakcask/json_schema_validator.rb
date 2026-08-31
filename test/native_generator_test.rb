@@ -25,6 +25,56 @@ RSpec.describe Schemurai::NativeGenerator do
     )
   end
 
+  it "audits every maintained translation source against the declared AST subset" do
+    inventories = described_class.audit_translation_units!
+
+    expect(inventories.keys).to contain_exactly(
+      "bootstrap_type", "type_slice", "schema_compilation", "evaluation",
+      "dialect", "format", "content", "result_construction"
+    )
+    expect(inventories.fetch("evaluation")).to include("exception_region", "iterator")
+  end
+
+  it "lowers every named root to deterministic typed syntax IR" do
+    units = described_class.lower_translation_units!
+
+    evaluation = units.fetch("evaluation")
+    expect(evaluation.fetch("stage")).to eq("syntax_audited")
+    expect(evaluation.fetch("roots").map { |root| root.fetch("root") }).to eq(
+      ["Schemurai::Internal::Evaluator#evaluate_valid", "Schemurai::Internal::Evaluator#evaluate"]
+    )
+    expect(JSON.generate(units)).to eq(JSON.generate(described_class.lower_translation_units!))
+  end
+
+  it "rejects an undeclared AST form with its translation source location" do
+    ir = described_class.load_json("native/lowering_ir.json")
+    ir.fetch("ast_forms").fetch("control_flow").delete("OrNode")
+    units = {
+      "units" => [described_class.load_json("native/translation_units.json").fetch("units").first]
+    }
+
+    expect { described_class.audit_translation_units!(ir:, units:) }
+      .to raise_error(
+        described_class::GenerationError,
+        /native\/source\/bootstrap\.rb:6: unsupported syntax OrNode in translation unit bootstrap_type/
+      )
+  end
+
+  it "requires forced-exception coverage for allocating intrinsics in owned regions" do
+    allocating = {
+      "name" => "allocate_buffer", "allocates" => true, "invokes_ruby" => false
+    }
+    region = {
+      "name" => "fixture", "resources" => ["buffer"], "operations" => ["allocate_buffer"],
+      "cleanup" => "idempotent_ensure", "forced_exceptions" => []
+    }
+
+    expect { described_class.validate_owned_region!(region, entries: [allocating]) }
+      .to raise_error(described_class::GenerationError, /lacks a forced-exception fixture for allocate_buffer/)
+    region["forced_exceptions"] << "allocate_buffer"
+    expect(described_class.validate_owned_region!(region, entries: [allocating])).to be(true)
+  end
+
   it "reproduces the committed output byte for byte" do
     Dir.mktmpdir do |directory|
       output = File.join(directory, "generated_bootstrap.c")
@@ -47,6 +97,61 @@ RSpec.describe Schemurai::NativeGenerator do
         right: {op: :intrinsic, name: "object_identity", operands: [{op: :literal, value: false}, {op: :argument, name: :instance}]}
       }
     )
+  end
+
+  it "lowers boolean conjunctions to typed control-flow IR" do
+    ir = compile("true.equal?(instance) && false.equal?(instance)")
+
+    expect(ir.fetch(:expression)).to include(op: :and)
+  end
+
+  it "lowers ensure bodies to idempotent cleanup regions" do
+    ir = compile(<<~RUBY)
+      begin
+        true.equal?(instance)
+      ensure
+        false.equal?(instance)
+      end
+    RUBY
+
+    expect(ir.fetch(:expression)).to eq(
+      op: :ensure_region,
+      body: [
+        {
+          op: :protected_region,
+          body: [{op: :intrinsic, name: "object_identity", operands: [{op: :literal, value: true}, {op: :argument, name: :instance}]}],
+          rescue: nil
+        }
+      ],
+      cleanup: [
+        {op: :intrinsic, name: "object_identity", operands: [{op: :literal, value: false}, {op: :argument, name: :instance}]}
+      ],
+      cleanup_policy: :idempotent
+    )
+  end
+
+  it "emits ensure, protect, and iterator calls from control regions" do
+    ensure_call = described_class.emit_control_region(
+      {op: :ensure_region}, body_function: "evaluate_body", cleanup_function: "evaluate_cleanup", state: "state"
+    )
+    protect_call = described_class.emit_control_region(
+      {op: :protected_region}, body_function: "evaluate_body", state: "state"
+    )
+    iterator_call = described_class.emit_control_region(
+      {op: :iterator_region}, body_function: "unused", callback_function: "each_callback",
+      method_id: "id_each", state: "collection"
+    )
+
+    expect(ensure_call).to eq("rb_ensure(evaluate_body, state, evaluate_cleanup, state)")
+    expect(protect_call).to eq("rb_protect(evaluate_body, state, &state_tag)")
+    expect(iterator_call).to eq("rb_block_call(collection, id_each, 0, NULL, each_callback, Qnil)")
+  end
+
+  it "emits typed-data graph access only through manifest intrinsics" do
+    expect(described_class.emit_graph_access("node_type_mask", receiver: "graph", operands: ["node"]))
+      .to eq("schemurai_node_type_mask(graph, node)")
+    expect { described_class.emit_graph_access("unknown", receiver: "graph", operands: []) }
+      .to raise_error(described_class::GenerationError, /missing graph intrinsic unknown/)
   end
 
   it "rejects an unknown receiver without a class guard" do

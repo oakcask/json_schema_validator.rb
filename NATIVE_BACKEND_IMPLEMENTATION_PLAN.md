@@ -706,6 +706,16 @@ expanding coverage.
 
 ### 4. Expand the deterministic generator
 
+Status: complete. Every maintained translation source is parsed into a
+deterministic typed syntax IR, and the generated source records both its source
+and IR fingerprints. The lowering manifest exhaustively classifies the Prism
+forms currently present and rejects an undeclared form with its source location.
+Control-region primitives cover protected calls, idempotent ensure cleanup, and
+iterator callbacks. Owned regions require forced-exception fixtures for every
+allocating or Ruby-calling intrinsic, while graph access and compatibility call
+classification remain manifest-only. Generator sources, manifests, and source
+provenance are included in the source gem.
+
 - Expand the accepted Ruby AST subset and lowering rules from the bootstrap
   generator.
 - Expand Prism diagnostics and deterministic C emission for the complete

@@ -12,11 +12,24 @@
     "owned_allocation": {"representation": "void *", "ownership": "owned"}
   },
   "ownership_states": ["borrowed", "rooted", "owned", "moved", "released"],
+  "ast_forms": {
+    "structure": ["ProgramNode", "StatementsNode", "ModuleNode", "ClassNode", "SingletonClassNode", "DefNode", "ParametersNode", "RequiredParameterNode", "OptionalParameterNode", "RequiredKeywordParameterNode", "OptionalKeywordParameterNode", "BlockParameterNode", "BlockParametersNode"],
+    "literal": ["NilNode", "TrueNode", "FalseNode", "IntegerNode", "StringNode", "SymbolNode", "RegularExpressionNode", "ArrayNode", "HashNode", "AssocNode", "KeywordHashNode", "RangeNode", "InterpolatedStringNode", "EmbeddedStatementsNode"],
+    "reference": ["SelfNode", "LocalVariableReadNode", "InstanceVariableReadNode", "ConstantReadNode", "ConstantPathNode"],
+    "assignment": ["LocalVariableWriteNode", "LocalVariableOrWriteNode", "LocalVariableOperatorWriteNode", "LocalVariableTargetNode", "InstanceVariableWriteNode", "InstanceVariableOrWriteNode", "InstanceVariableOperatorWriteNode", "ConstantWriteNode", "IndexOrWriteNode"],
+    "control_flow": ["IfNode", "UnlessNode", "CaseNode", "WhenNode", "ElseNode", "AndNode", "OrNode", "ReturnNode", "NextNode", "BreakNode", "WhileNode", "ParenthesesNode"],
+    "call": ["CallNode", "ArgumentsNode", "SuperNode", "ForwardingSuperNode", "YieldNode", "SplatNode"],
+    "iterator": ["BlockNode"],
+    "exception_region": ["BeginNode", "RescueNode", "EnsureNode"]
+  },
   "rules": {
     "ruby_api_liveness": "Every VALUE live across an allocating Ruby C API call must be stack-visible or registered as a movable GC root.",
     "owned_cleanup": "Every owned allocation must move to an owner or enter an idempotent ensure cleanup before a raising call.",
     "dominance": "A class refinement is usable only in the guard's dominated control-flow region.",
     "invalidation": "A callback, generic Ruby invocation, or mutation invalidates accepted-subclass and union refinements unless its intrinsic explicitly preserves them.",
-    "exactness": "Exact built-in and accepted-subclass refinements are distinct and cannot be substituted."
+    "exactness": "Exact built-in and accepted-subclass refinements are distinct and cannot be substituted.",
+    "exception_regions": "Ruby ensure and rescue regions lower to explicit protected bodies and idempotent cleanup regions before C emission.",
+    "iterators": "Blocks and iterators lower to named callback regions; captured values are explicit region inputs.",
+    "manifest_only": "Lifetime guards, typed-data access, class refinements, and generic-call classifications can only originate in intrinsic manifests."
   }
 }

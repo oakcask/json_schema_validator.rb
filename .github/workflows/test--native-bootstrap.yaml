@@ -10,8 +10,7 @@ on:
       - Gemfile
       - Gemfile.lock
       - ext/**/*
-      - lib/schemurai/backend.rb
-      - lib/schemurai/native.rb
+      - lib/schemurai/**/*.rb
       - native/**/*
       - script/generate-native
       - test/native_*.rb
@@ -23,8 +22,7 @@ on:
       - Gemfile
       - Gemfile.lock
       - ext/**/*
-      - lib/schemurai/backend.rb
-      - lib/schemurai/native.rb
+      - lib/schemurai/**/*.rb
       - native/**/*
       - script/generate-native
       - test/native_*.rb

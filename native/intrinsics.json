@@ -78,6 +78,7 @@
       "guard": "typed entry signature", "dispatch": "native", "available": ["4.0"], "fixtures": []
     }
   ],
+  "owned_regions": [],
   "generic_calls": [
     {"site": "type_integer_out_of_domain_finite", "source": "Schemurai::Internal::Evaluator#type?", "method": "finite?", "classification": "cold_out_of_domain_compatibility", "fixtures": ["exceptional-numeric-method"]},
     {"site": "type_integer_out_of_domain_to_i", "source": "Schemurai::Internal::Evaluator#type?", "method": "to_i", "classification": "cold_out_of_domain_compatibility", "fixtures": ["coercible-numeric-subclass", "exceptional-numeric-method"]},

@@ -19,7 +19,15 @@ Gem::Specification.new do |spec|
     "source_code_uri" => "#{spec.homepage}/tree/main",
     "rubygems_mfa_required" => "true"
   }
-  spec.files = Dir["ext/**/*.{c,h,rb}", "lib/**/*", "README.md", "LICENSE"]
+  spec.files = Dir[
+    "ext/**/*.{c,h,rb}",
+    "lib/**/*",
+    "native/**/*.{json,rb}",
+    "script/generate-native",
+    "tool/native_generator.rb",
+    "README.md",
+    "LICENSE"
+  ]
   spec.require_paths = ["lib"]
   spec.extensions = ["ext/schemurai/extconf.rb"]
 
