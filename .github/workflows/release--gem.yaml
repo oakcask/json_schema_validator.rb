@@ -30,6 +30,34 @@ jobs:
         uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
         with:
           token: ${{ steps.gh-token-gen.outputs.token }}
+      # release-please does not update the Bundler 4 CHECKSUMS entry for the
+      # gem being released. Regenerate the lockfile on the release PR branch.
+      - name: Check out release pull request
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+          token: ${{ steps.gh-token-gen.outputs.token }}
+          submodules: true
+      - name: Set up Ruby for lockfile update
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+      - name: Regenerate lockfile
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        run: bundle lock
+      - name: Commit regenerated lockfile
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
+        env:
+          RELEASE_BRANCH: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+        run: |
+          if git diff --quiet -- Gemfile.lock; then
+            exit 0
+          fi
+          git config user.name "oakcask-actions[bot]"
+          git config user.email "206904404+oakcask-actions[bot]@users.noreply.github.com"
+          git add Gemfile.lock
+          git commit -m "chore: regenerate lockfile"
+          git push origin "HEAD:${RELEASE_BRANCH}"
 
   build:
     needs: release
