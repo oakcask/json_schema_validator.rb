@@ -1,5 +1,15 @@
 # Performance Benchmark
 
+## Native `type` vertical slice
+
+`native_type_slice.rb` is the retained Workstream 3 checkpoint. It measures the
+same compiled `{"type":"integer"}` schema and instance sequence through the
+Ruby oracle and guarded-specialization native candidate. Run it once with
+`ruby --disable-yjit` and once with `ruby --yjit`, adding `-Ilib` and the built
+extension directory to the load path. Raw checkpoint samples live under
+`benchmark/baselines/` and record the runtime, compiler, warmup, iteration
+count, and YJIT state needed to reproduce the comparison.
+
 `draft7.rb` measures this implementation against all 1,045 supported required
 and optional cases from the official Draft 7 suite. It verifies every expected
 result before measuring validator construction, end-to-end suite execution, and

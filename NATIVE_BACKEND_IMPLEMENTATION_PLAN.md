@@ -5,7 +5,11 @@
 Workstreams 1 and 2 are complete. The compatibility contract is frozen, and
 the deterministic generator, typed IR and intrinsic manifests, extension
 bootstrap, strict loader, and Ruby/C intrinsic contract harness are in place.
-Workstream 3, the lifecycle-complete `type` vertical slice, has not started.
+Workstream 3, the lifecycle-complete `type` vertical slice, is complete. The
+named Ruby translation root now generates a guarded-specialization native
+validator over an immutable, compactable, shareable typed-data graph. Forced
+native differential, exception, interruption, GC, thread, Ractor, package, and
+performance checkpoints cover the slice.
 
 This document describes the complete migration from the current Ruby
 implementation to a generated CRuby native extension. The work is not complete
@@ -662,6 +666,11 @@ first vertical slice has executable contract tests on every supported CRuby
 minor.
 
 ### 3. Build a lifecycle-complete vertical slice
+
+Status: complete. The generated `type` slice is strict: known unsupported
+validation keywords raise instead of falling back to the Ruby evaluator. Raw
+interpreter and YJIT samples show that the representation removes enough Ruby
+dispatch to continue expanding the generator.
 
 - Refactor and test a Ruby-executable dispatch seam that exposes the `type`
   slice as a named translation root without native-only stubs for the rest of

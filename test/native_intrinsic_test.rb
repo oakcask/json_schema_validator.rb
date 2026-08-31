@@ -14,10 +14,9 @@ RSpec.describe "native intrinsic contracts" do
     expect(Schemurai::Native::BACKEND).to eq(:native)
   end
 
-  it "does not present bootstrap intrinsics as a complete backend" do
-    expect(Schemurai.const_get(:Backend).native_available?).to be(false)
-    expect { Schemurai.compile(true, backend: :native) }
-      .to raise_error(LoadError, /validation dispatch is not implemented/)
+  it "presents strict native validation dispatch" do
+    expect(Schemurai.const_get(:Backend).native_available?).to be(true)
+    expect(Schemurai.compile(true, backend: :native).backend).to eq(:native)
   end
 
   it "is callable from a non-main Ractor" do

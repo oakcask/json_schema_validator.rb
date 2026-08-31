@@ -72,7 +72,12 @@ module Schemurai
 
     def initialize(graph, root, content:, format:, backend: :ruby)
       @backend = backend
-      @evaluator = Internal::Evaluator.new(graph, root, content: content, format: format)
+      @evaluator = if backend == :native
+        Native::Validator.new(root.schema)
+      else
+        Internal::Evaluator.new(graph, root, content: content, format: format)
+      end
+      Ractor.make_shareable(self) if backend == :native
     end
 
     def validate(instance)

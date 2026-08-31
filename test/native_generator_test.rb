@@ -16,6 +16,13 @@ RSpec.describe Schemurai::NativeGenerator do
 
   it "validates complete, typed manifests" do
     expect(described_class.validate_manifests!).to be(true)
+    source = File.read("lib/schemurai/type_slice.rb")
+    expect(described_class.validate_type_slice!(source)).to be(true)
+    expect(described_class.compile_type_slice(source)).to include(
+      name: :valid?, result: :c_boolean,
+      type_names: %w[null boolean object array number integer string],
+      intrinsics: %w[object_identity exact_builtin_guard finite_float integral_float]
+    )
   end
 
   it "reproduces the committed output byte for byte" do

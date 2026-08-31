@@ -5,6 +5,8 @@ require "schemurai/native"
 
 abort "expected the packaged native bootstrap" unless Schemurai::Native::BACKEND == :native
 abort "expected the generated boolean intrinsic" unless Schemurai::Native::Intrinsics.boolean_instance?(true)
+abort "expected packaged native type validation" unless Schemurai.valid?({"type" => "integer"}, 42, backend: :native)
+abort "expected strict native type validation" if Schemurai.valid?({"type" => "integer"}, 4.2, backend: :native)
 
 schema = {
   "$schema" => "https://json-schema.org/draft/2020-12/schema",

@@ -3,6 +3,7 @@
 require "json"
 require "base64"
 require_relative "evaluation"
+require_relative "type_slice"
 
 module Schemurai
   module Internal
@@ -123,10 +124,7 @@ module Schemurai
       end
 
       private def valid_type?(schema, value)
-        types = schema["type"]
-        return types.any? { |type| type?(value, type) } if types.is_a?(Array)
-
-        type?(value, types)
+        TypeSlice.valid?(schema["type"], value)
       end
 
       private def valid_enum?(schema, value)
@@ -436,7 +434,7 @@ module Schemurai
         return unless schema.key?("type")
 
         types = Array(schema["type"])
-        return if types.any? { |type| type?(value, type) }
+        return if TypeSlice.valid?(schema["type"], value)
 
         add_error("type", "expected #{types.join(" or ")}")
       end
@@ -706,21 +704,8 @@ module Schemurai
         add_error(keyword, "size limit was exceeded")
       end
 
-      private def type?(value, type)
-        case type
-        when "null" then value.nil?
-        when "boolean" then value == true || value == false
-        when "object" then value.is_a?(Hash)
-        when "array" then value.is_a?(Array)
-        when "number" then number?(value)
-        when "integer" then number?(value) && value.finite? && value.to_i == value
-        when "string" then value.is_a?(String)
-        else false
-        end
-      end
-
       private def number?(value)
-        value.is_a?(Numeric) && !value.is_a?(Complex)
+        TypeSlice.number?(value)
       end
 
       private def json_equal?(left, right)

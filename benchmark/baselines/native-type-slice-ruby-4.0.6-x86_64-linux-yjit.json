@@ -1,0 +1,18 @@
+{
+  "benchmark": "native_type_slice_repeated_validation",
+  "ruby_version": "ruby 4.0.6 (2026-07-14 revision 03b6d3f889) +YJIT +PRISM [x86_64-linux]",
+  "platform": "x86_64-linux",
+  "compiler": "gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "yjit": true,
+  "iterations_per_sample": 200000,
+  "compilations_per_sample": 1000,
+  "warmup_iterations": 10000,
+  "instances": [1, 1.0, 1.5, "1"],
+  "samples": [
+    {"ruby_compile_seconds": 0.019341747974976897, "native_compile_seconds": 0.007089791004545987, "ruby_validation_seconds": 0.04927220504032448, "native_validation_seconds": 0.007371149025857449},
+    {"ruby_compile_seconds": 0.0037488509551621974, "native_compile_seconds": 0.004891640972346067, "ruby_validation_seconds": 0.047891577007249, "native_validation_seconds": 0.007130220998078585},
+    {"ruby_compile_seconds": 0.004219961003400385, "native_compile_seconds": 0.004560379020404071, "ruby_validation_seconds": 0.04845184402074665, "native_validation_seconds": 0.007123624032828957},
+    {"ruby_compile_seconds": 0.0038261620211414993, "native_compile_seconds": 0.004828153003472835, "ruby_validation_seconds": 0.04804303398123011, "native_validation_seconds": 0.007152899983339012},
+    {"ruby_compile_seconds": 0.00417212100001052, "native_compile_seconds": 0.005628924001939595, "ruby_validation_seconds": 0.048286109988112, "native_validation_seconds": 0.006535020947922021}
+  ]
+}
