@@ -42,8 +42,12 @@ module Schemurai
     def compile(schema, base_uri: nil, content: false, format: false)
       raise Error, "cannot compile schemas after the registry is made shareable" if shareable?
 
-      root = @graph.compile(schema, base_uri: base_uri)
-      Validator.new(@graph, root, content: content, format: format, backend: backend)
+      if backend == :native
+        root, snapshot = @graph.compile_native(schema, base_uri: base_uri)
+      else
+        root = @graph.compile(schema, base_uri: base_uri)
+      end
+      Validator.new(@graph, root, content: content, format: format, backend: backend, native_snapshot: snapshot)
     end
 
     def make_shareable
@@ -70,10 +74,10 @@ module Schemurai
   class Validator
     attr_reader :backend
 
-    def initialize(graph, root, content:, format:, backend: :ruby)
+    def initialize(graph, root, content:, format:, backend: :ruby, native_snapshot: nil)
       @backend = backend
       @evaluator = if backend == :native
-        Native::Validator.new(root.schema)
+        Native::Validator.new(native_snapshot || graph.native_snapshot(root))
       else
         Internal::Evaluator.new(graph, root, content: content, format: format)
       end

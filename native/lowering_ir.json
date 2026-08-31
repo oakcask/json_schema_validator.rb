@@ -16,9 +16,9 @@
     "structure": ["ProgramNode", "StatementsNode", "ModuleNode", "ClassNode", "SingletonClassNode", "DefNode", "ParametersNode", "RequiredParameterNode", "OptionalParameterNode", "RequiredKeywordParameterNode", "OptionalKeywordParameterNode", "BlockParameterNode", "BlockParametersNode"],
     "literal": ["NilNode", "TrueNode", "FalseNode", "IntegerNode", "StringNode", "SymbolNode", "RegularExpressionNode", "ArrayNode", "HashNode", "AssocNode", "KeywordHashNode", "RangeNode", "InterpolatedStringNode", "EmbeddedStatementsNode"],
     "reference": ["SelfNode", "LocalVariableReadNode", "InstanceVariableReadNode", "ConstantReadNode", "ConstantPathNode"],
-    "assignment": ["LocalVariableWriteNode", "LocalVariableOrWriteNode", "LocalVariableOperatorWriteNode", "LocalVariableTargetNode", "InstanceVariableWriteNode", "InstanceVariableOrWriteNode", "InstanceVariableOperatorWriteNode", "ConstantWriteNode", "IndexOrWriteNode"],
+    "assignment": ["LocalVariableWriteNode", "LocalVariableOrWriteNode", "LocalVariableOperatorWriteNode", "LocalVariableTargetNode", "MultiTargetNode", "InstanceVariableWriteNode", "InstanceVariableOrWriteNode", "InstanceVariableOperatorWriteNode", "ConstantWriteNode", "IndexOrWriteNode"],
     "control_flow": ["IfNode", "UnlessNode", "CaseNode", "WhenNode", "ElseNode", "AndNode", "OrNode", "ReturnNode", "NextNode", "BreakNode", "WhileNode", "ParenthesesNode"],
-    "call": ["CallNode", "ArgumentsNode", "SuperNode", "ForwardingSuperNode", "YieldNode", "SplatNode"],
+    "call": ["CallNode", "ArgumentsNode", "BlockArgumentNode", "SuperNode", "ForwardingSuperNode", "YieldNode", "SplatNode"],
     "iterator": ["BlockNode"],
     "exception_region": ["BeginNode", "RescueNode", "EnsureNode"]
   },

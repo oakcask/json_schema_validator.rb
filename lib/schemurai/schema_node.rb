@@ -39,6 +39,19 @@ module Schemurai
         @children.dig(keyword, segment)
       end
 
+      def each_child
+        return enum_for(__method__) unless block_given?
+        return unless @children
+
+        @children.each do |keyword, value|
+          if value.is_a?(Hash)
+            value.each { |segment, child| yield keyword, segment, child }
+          else
+            yield keyword, nil, value
+          end
+        end
+      end
+
       def freeze
         if @children
           @children.each_value { |value| value.freeze if value.is_a?(Hash) }

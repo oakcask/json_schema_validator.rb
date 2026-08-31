@@ -49,6 +49,34 @@
   ],
   "graph_intrinsics": [
     {
+      "name": "graph_allocate_records", "ruby_forms": ["native graph record allocation"], "receiver": "graph_pointer", "operands": ["integer_size"], "result": "owned_allocation",
+      "ruby_semantics": "Reserve one compact native record for every compiled schema occurrence", "c_lowering": "ALLOC_N(schemurai_node_t, $count)",
+      "allocates": true, "invokes_ruby": false, "raises": true, "triggers_gc": true, "gvl": "required",
+      "cleanup": "graph free releases the allocation after partial initialization", "rooting": "record VALUE fields are initialized before publication", "restriction": "validated non-empty node count",
+      "refinement": "native graph pointer", "guard": "typed entry signature", "dispatch": "native", "available": ["4.0"], "fixtures": [{"exception": "native allocation failure"}]
+    },
+    {
+      "name": "graph_publish_record", "ruby_forms": ["publish compiled node record"], "receiver": "graph_pointer", "operands": ["node_index", "ruby_value"], "result": "node_index",
+      "ruby_semantics": "Copy immutable schema metadata and child/reference indexes into a native record", "c_lowering": "schemurai_graph_publish_record",
+      "allocates": false, "invokes_ruby": false, "raises": false, "triggers_gc": false, "gvl": "required",
+      "cleanup": "graph owns every published record", "rooting": "all retained VALUE fields are marked and compacted", "restriction": "validated snapshot record and in-range node index",
+      "refinement": "native graph pointer", "guard": "typed entry signature", "dispatch": "native", "available": ["4.0"], "fixtures": []
+    },
+    {
+      "name": "node_compile_type", "ruby_forms": ["compile node type metadata"], "receiver": "graph_pointer", "operands": ["node_index", "ruby_value"], "result": "integer_size",
+      "ruby_semantics": "Compile the maintained type slice for one schema occurrence", "c_lowering": "schemurai_generated_compile_type",
+      "allocates": true, "invokes_ruby": false, "raises": true, "triggers_gc": true, "gvl": "required",
+      "cleanup": "partially initialized record remains owned by the graph", "rooting": "schema VALUE is published to the marked record before invocation", "restriction": "JSON-shaped schema value",
+      "refinement": "native graph pointer", "guard": "schema-domain validation", "dispatch": "native", "available": ["4.0"], "fixtures": [{"exception": "non-schema value after native allocation"}]
+    },
+    {
+      "name": "graph_make_shareable", "ruby_forms": ["graph.make_shareable"], "receiver": "graph_pointer", "operands": [], "result": "graph_pointer",
+      "ruby_semantics": "Publish the graph only after every retained value and the frozen typed-data wrapper are Ractor-shareable", "c_lowering": "schemurai_graph_make_shareable",
+      "allocates": true, "invokes_ruby": true, "raises": true, "triggers_gc": true, "gvl": "required",
+      "cleanup": "shareable flag remains false on every exceptional exit", "rooting": "graph marks every retained VALUE before the transition", "restriction": "fully initialized immutable graph",
+      "refinement": "native graph pointer", "guard": "typed entry signature", "dispatch": "native", "available": ["4.0"], "fixtures": [{"exception": "retained unshareable object"}]
+    },
+    {
       "name": "graph_schema", "ruby_forms": ["node.schema"], "receiver": "graph_pointer", "operands": ["node_index"], "result": "ruby_value",
       "ruby_semantics": "Return the retained schema value for a compiled node", "c_lowering": "schemurai_graph_schema",
       "allocates": false, "invokes_ruby": false, "raises": false, "triggers_gc": false, "gvl": "required",
@@ -78,7 +106,14 @@
       "guard": "typed entry signature", "dispatch": "native", "available": ["4.0"], "fixtures": []
     }
   ],
-  "owned_regions": [],
+  "owned_regions": [
+    {
+      "name": "schema_graph_import", "resources": ["node_records"],
+      "operations": ["graph_allocate_records", "graph_publish_record", "node_compile_type", "graph_make_shareable"],
+      "cleanup": "idempotent_ensure",
+      "forced_exceptions": ["graph_allocate_records", "node_compile_type", "graph_make_shareable"]
+    }
+  ],
   "generic_calls": [
     {"site": "type_integer_out_of_domain_finite", "source": "Schemurai::Internal::Evaluator#type?", "method": "finite?", "classification": "cold_out_of_domain_compatibility", "fixtures": ["exceptional-numeric-method"]},
     {"site": "type_integer_out_of_domain_to_i", "source": "Schemurai::Internal::Evaluator#type?", "method": "to_i", "classification": "cold_out_of_domain_compatibility", "fixtures": ["coercible-numeric-subclass", "exceptional-numeric-method"]},

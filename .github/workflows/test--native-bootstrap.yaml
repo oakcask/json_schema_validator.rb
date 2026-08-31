@@ -54,4 +54,4 @@ jobs:
         run: make
         working-directory: ext/schemurai
       - name: Run Ruby and C intrinsic contracts
-        run: bundle exec rspec -Ilib -Iext/schemurai test/native_intrinsic_test.rb test/native_type_slice_test.rb
+        run: bundle exec rspec -Ilib -Iext/schemurai test/native_intrinsic_test.rb test/native_type_slice_test.rb test/native_schema_compilation_test.rb

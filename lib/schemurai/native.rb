@@ -26,20 +26,18 @@ module Schemurai
         unevaluatedProperties items prefixItems additionalItems contentSchema format
       ].freeze
 
-      def initialize(schema)
-        if schema.is_a?(Hash) && (keyword = schema.keys.find { |key| UNSUPPORTED_KEYWORDS.include?(key) })
-          raise Error, "native type slice does not support #{keyword.inspect}"
-        end
-
-        @graph = Graph.new(schema)
+      def initialize(snapshot)
+        @graph = Graph.new(snapshot)
         Ractor.make_shareable(self)
       end
 
       def valid?(instance)
+        reject_unsupported_evaluation!
         @graph.valid?(instance)
       end
 
       def validate(instance)
+        reject_unsupported_evaluation!
         return Result.new([]) if valid?(instance)
 
         if @graph.schema == false
@@ -65,7 +63,16 @@ module Schemurai
       end
 
       def __validate_repeated__(instance, iterations)
+        reject_unsupported_evaluation!
         @graph.__validate_repeated__(instance, iterations)
+      end
+
+      private def reject_unsupported_evaluation!
+        schema = @graph.schema
+        return unless schema.is_a?(Hash)
+
+        keyword = schema.keys.find { |key| UNSUPPORTED_KEYWORDS.include?(key) }
+        raise Error, "native evaluator does not support #{keyword.inspect}" if keyword
       end
 
       private_constant :UNSUPPORTED_KEYWORDS

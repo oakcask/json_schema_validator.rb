@@ -738,6 +738,15 @@ supported CRuby version, and that output compiles on every supported version.
 
 ### 5. Implement native ownership and schema compilation
 
+Status: complete. Schema compilation now publishes a pre-resolved, indexed
+snapshot into an immutable native graph containing every compiled occurrence,
+dialect and format metadata, child edge, URI registration, dynamic anchor, and
+reference target. Native records have atomic publication and complete typed-data
+mark, compact, free, size, and Ractor-shareability handling. Compilation rollback,
+GC-during-construction, compaction, reference, registry lookup, and independent
+validator tests cover the ownership boundary. Interpreter and YJIT compilation,
+memory, and repeated-validation samples are retained as the next checkpoint.
+
 - Expand the proven typed-data structures and lifecycle functions.
 - Generate schema compilation, reference resolution, registry behavior, and
   dialect handling from their maintained Ruby translation units.

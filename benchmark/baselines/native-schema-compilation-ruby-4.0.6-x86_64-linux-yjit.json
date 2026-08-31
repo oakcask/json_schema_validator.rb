@@ -1,0 +1,18 @@
+{
+  "benchmark": "native_schema_compilation",
+  "ruby_version": "ruby 4.0.6 (2026-07-14 revision 03b6d3f889) +YJIT +PRISM [x86_64-linux]",
+  "platform": "x86_64-linux",
+  "compiler": "gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "yjit": true,
+  "nodes_per_graph": 101,
+  "native_graph_memsize": 8976,
+  "compilations_per_sample": 200,
+  "validations_per_sample": 100000,
+  "samples": [
+    {"ruby_compile_seconds": 0.09412170096766204, "native_compile_seconds": 0.1275716950185597, "native_validation_seconds": 0.07944760099053383},
+    {"ruby_compile_seconds": 0.07434973097406328, "native_compile_seconds": 0.1192498659947887, "native_validation_seconds": 0.07823678496060893},
+    {"ruby_compile_seconds": 0.07471514696953818, "native_compile_seconds": 0.11880227696383372, "native_validation_seconds": 0.07779347500763834},
+    {"ruby_compile_seconds": 0.07341993396403268, "native_compile_seconds": 0.11810749198775738, "native_validation_seconds": 0.07745928602525964},
+    {"ruby_compile_seconds": 0.07329783501336351, "native_compile_seconds": 0.11793529201531783, "native_validation_seconds": 0.07768560299882665}
+  ]
+}

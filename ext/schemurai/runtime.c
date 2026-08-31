@@ -10,34 +10,105 @@ int schemurai_generated_valid_type(unsigned long mask, VALUE instance);
 
 typedef struct {
     VALUE schema;
+    VALUE dialect;
+    VALUE dialect_uri;
+    VALUE base_uri;
+    VALUE schema_path;
+    VALUE resource_path;
+    VALUE format;
+    VALUE children;
+    VALUE references;
+    unsigned long keyword_mask;
     unsigned long type_mask;
+} schemurai_node_t;
+
+typedef struct {
+    schemurai_node_t *nodes;
+    size_t node_count;
+    size_t root;
+    VALUE uri_registry;
+    VALUE dynamic_anchors;
     bool shareable;
 } schemurai_graph_t;
+
+static ID id_root;
+static ID id_nodes;
+static ID id_uri_registry;
+static ID id_dynamic_anchors;
+static ID id_schema;
+static ID id_dialect;
+static ID id_dialect_uri;
+static ID id_base_uri;
+static ID id_schema_path;
+static ID id_resource_path;
+static ID id_keyword_mask;
+static ID id_format;
+static ID id_children;
+static ID id_references;
+
+static VALUE
+schemurai_hash_symbol(VALUE hash, ID key)
+{
+    return rb_hash_aref(hash, ID2SYM(key));
+}
 
 static void
 schemurai_graph_mark(void *pointer)
 {
     schemurai_graph_t *graph = pointer;
-    rb_gc_mark_movable(graph->schema);
+    size_t index;
+
+    for (index = 0; index < graph->node_count; index++) {
+        schemurai_node_t *node = &graph->nodes[index];
+        rb_gc_mark_movable(node->schema);
+        rb_gc_mark_movable(node->dialect);
+        rb_gc_mark_movable(node->dialect_uri);
+        rb_gc_mark_movable(node->base_uri);
+        rb_gc_mark_movable(node->schema_path);
+        rb_gc_mark_movable(node->resource_path);
+        rb_gc_mark_movable(node->format);
+        rb_gc_mark_movable(node->children);
+        rb_gc_mark_movable(node->references);
+    }
+    rb_gc_mark_movable(graph->uri_registry);
+    rb_gc_mark_movable(graph->dynamic_anchors);
 }
 
 static void
 schemurai_graph_compact(void *pointer)
 {
     schemurai_graph_t *graph = pointer;
-    graph->schema = rb_gc_location(graph->schema);
+    size_t index;
+
+    for (index = 0; index < graph->node_count; index++) {
+        schemurai_node_t *node = &graph->nodes[index];
+        node->schema = rb_gc_location(node->schema);
+        node->dialect = rb_gc_location(node->dialect);
+        node->dialect_uri = rb_gc_location(node->dialect_uri);
+        node->base_uri = rb_gc_location(node->base_uri);
+        node->schema_path = rb_gc_location(node->schema_path);
+        node->resource_path = rb_gc_location(node->resource_path);
+        node->format = rb_gc_location(node->format);
+        node->children = rb_gc_location(node->children);
+        node->references = rb_gc_location(node->references);
+    }
+    graph->uri_registry = rb_gc_location(graph->uri_registry);
+    graph->dynamic_anchors = rb_gc_location(graph->dynamic_anchors);
 }
 
 static void
 schemurai_graph_free(void *pointer)
 {
-    xfree(pointer);
+    schemurai_graph_t *graph = pointer;
+    xfree(graph->nodes);
+    xfree(graph);
 }
 
 static size_t
 schemurai_graph_size(const void *pointer)
 {
-    return pointer == NULL ? 0 : sizeof(schemurai_graph_t);
+    const schemurai_graph_t *graph = pointer;
+    return graph == NULL ? 0 : sizeof(schemurai_graph_t) + (sizeof(schemurai_node_t) * graph->node_count);
 }
 
 static const rb_data_type_t schemurai_graph_type = {
@@ -56,8 +127,11 @@ schemurai_graph_allocate(VALUE klass)
 {
     schemurai_graph_t *graph;
     VALUE wrapper = TypedData_Make_Struct(klass, schemurai_graph_t, &schemurai_graph_type, graph);
-    graph->schema = Qnil;
-    graph->type_mask = 0;
+    graph->nodes = NULL;
+    graph->node_count = 0;
+    graph->root = 0;
+    graph->uri_registry = Qnil;
+    graph->dynamic_anchors = Qnil;
     graph->shareable = false;
     return wrapper;
 }
@@ -66,9 +140,24 @@ static VALUE
 schemurai_graph_make_shareable(VALUE self)
 {
     schemurai_graph_t *graph;
+    size_t index;
     TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
     if (graph->shareable) return self;
 
+    for (index = 0; index < graph->node_count; index++) {
+        schemurai_node_t *node = &graph->nodes[index];
+        rb_ractor_make_shareable(node->schema);
+        rb_ractor_make_shareable(node->dialect);
+        rb_ractor_make_shareable(node->dialect_uri);
+        rb_ractor_make_shareable(node->base_uri);
+        rb_ractor_make_shareable(node->schema_path);
+        rb_ractor_make_shareable(node->resource_path);
+        rb_ractor_make_shareable(node->format);
+        rb_ractor_make_shareable(node->children);
+        rb_ractor_make_shareable(node->references);
+    }
+    rb_ractor_make_shareable(graph->uri_registry);
+    rb_ractor_make_shareable(graph->dynamic_anchors);
     rb_obj_freeze(self);
     rb_ractor_make_shareable(self);
     graph->shareable = true;
@@ -76,12 +165,54 @@ schemurai_graph_make_shareable(VALUE self)
 }
 
 static VALUE
-schemurai_graph_initialize(VALUE self, VALUE schema)
+schemurai_graph_initialize(VALUE self, VALUE snapshot)
 {
     schemurai_graph_t *graph;
+    VALUE records;
+    long count;
+    long index;
+
+    Check_Type(snapshot, T_HASH);
+    records = schemurai_hash_symbol(snapshot, id_nodes);
+    Check_Type(records, T_ARRAY);
+    Check_Type(schemurai_hash_symbol(snapshot, id_uri_registry), T_HASH);
+    Check_Type(schemurai_hash_symbol(snapshot, id_dynamic_anchors), T_HASH);
+    count = RARRAY_LEN(records);
+    if (count == 0) rb_raise(rb_eArgError, "native graph snapshot has no nodes");
+
     TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
-    graph->schema = schema;
-    graph->type_mask = schemurai_generated_compile_type(schema);
+    graph->root = NUM2SIZET(schemurai_hash_symbol(snapshot, id_root));
+    if (graph->root >= (size_t)count) rb_raise(rb_eArgError, "native graph root index is out of bounds");
+
+    /* Validate all raising numeric conversions before acquiring native memory. */
+    for (index = 0; index < count; index++) {
+        VALUE record = rb_ary_entry(records, index);
+        Check_Type(record, T_HASH);
+        (void)NUM2ULONG(schemurai_hash_symbol(record, id_keyword_mask));
+        Check_Type(schemurai_hash_symbol(record, id_children), T_ARRAY);
+        Check_Type(schemurai_hash_symbol(record, id_references), T_ARRAY);
+    }
+
+    graph->nodes = ALLOC_N(schemurai_node_t, (size_t)count);
+    for (index = 0; index < count; index++) {
+        VALUE record = rb_ary_entry(records, index);
+        schemurai_node_t *node = &graph->nodes[index];
+        node->schema = schemurai_hash_symbol(record, id_schema);
+        node->dialect = schemurai_hash_symbol(record, id_dialect);
+        node->dialect_uri = schemurai_hash_symbol(record, id_dialect_uri);
+        node->base_uri = schemurai_hash_symbol(record, id_base_uri);
+        node->schema_path = schemurai_hash_symbol(record, id_schema_path);
+        node->resource_path = schemurai_hash_symbol(record, id_resource_path);
+        node->keyword_mask = NUM2ULONG(schemurai_hash_symbol(record, id_keyword_mask));
+        node->format = schemurai_hash_symbol(record, id_format);
+        node->children = schemurai_hash_symbol(record, id_children);
+        node->references = schemurai_hash_symbol(record, id_references);
+        /* Publish only fully initialized VALUE fields to the GC callbacks. */
+        graph->node_count = (size_t)index + 1;
+        node->type_mask = schemurai_generated_compile_type(node->schema);
+    }
+    graph->uri_registry = schemurai_hash_symbol(snapshot, id_uri_registry);
+    graph->dynamic_anchors = schemurai_hash_symbol(snapshot, id_dynamic_anchors);
     return schemurai_graph_make_shareable(self);
 }
 
@@ -91,7 +222,16 @@ schemurai_graph_for_shareability_test(VALUE klass, VALUE schema)
     schemurai_graph_t *graph;
     VALUE wrapper = schemurai_graph_allocate(klass);
     TypedData_Get_Struct(wrapper, schemurai_graph_t, &schemurai_graph_type, graph);
-    graph->schema = schema;
+    graph->nodes = ALLOC_N(schemurai_node_t, 1);
+    graph->node_count = 1;
+    graph->root = 0;
+    graph->nodes[0] = (schemurai_node_t){
+        .schema = schema, .dialect = Qnil, .dialect_uri = Qnil, .base_uri = Qnil,
+        .schema_path = Qnil, .resource_path = Qnil, .format = Qnil,
+        .children = Qnil, .references = Qnil, .keyword_mask = 0, .type_mask = 0,
+    };
+    graph->uri_registry = Qnil;
+    graph->dynamic_anchors = Qnil;
     return wrapper;
 }
 
@@ -100,7 +240,105 @@ schemurai_graph_schema(VALUE self)
 {
     schemurai_graph_t *graph;
     TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
-    return graph->schema;
+    if (graph->node_count == 0) rb_raise(rb_eRuntimeError, "native graph is not initialized");
+    return graph->nodes[graph->root].schema;
+}
+
+static VALUE
+schemurai_graph_node_count(VALUE self)
+{
+    schemurai_graph_t *graph;
+    TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
+    return SIZET2NUM(graph->node_count);
+}
+
+static VALUE
+schemurai_graph_root_index(VALUE self)
+{
+    schemurai_graph_t *graph;
+    TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
+    return SIZET2NUM(graph->root);
+}
+
+static schemurai_node_t *
+schemurai_graph_node_at(schemurai_graph_t *graph, VALUE index_value)
+{
+    size_t index = NUM2SIZET(index_value);
+    if (index >= graph->node_count) rb_raise(rb_eIndexError, "native graph node index is out of bounds");
+    return &graph->nodes[index];
+}
+
+static VALUE
+schemurai_graph_node_metadata(VALUE self, VALUE index_value)
+{
+    schemurai_graph_t *graph;
+    schemurai_node_t *node;
+    VALUE result = rb_hash_new();
+    TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
+    node = schemurai_graph_node_at(graph, index_value);
+    rb_hash_aset(result, ID2SYM(id_schema), node->schema);
+    rb_hash_aset(result, ID2SYM(id_dialect), node->dialect);
+    rb_hash_aset(result, ID2SYM(id_dialect_uri), node->dialect_uri);
+    rb_hash_aset(result, ID2SYM(id_base_uri), node->base_uri);
+    rb_hash_aset(result, ID2SYM(id_schema_path), node->schema_path);
+    rb_hash_aset(result, ID2SYM(id_resource_path), node->resource_path);
+    rb_hash_aset(result, ID2SYM(id_keyword_mask), ULONG2NUM(node->keyword_mask));
+    rb_hash_aset(result, ID2SYM(id_format), node->format);
+    return result;
+}
+
+static VALUE
+schemurai_graph_child(int argc, VALUE *argv, VALUE self)
+{
+    schemurai_graph_t *graph;
+    schemurai_node_t *node;
+    VALUE index_value, keyword, segment, entry;
+    long index;
+    rb_scan_args(argc, argv, "21", &index_value, &keyword, &segment);
+    TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
+    node = schemurai_graph_node_at(graph, index_value);
+    for (index = 0; index < RARRAY_LEN(node->children); index++) {
+        entry = rb_ary_entry(node->children, index);
+        if (RTEST(rb_equal(rb_ary_entry(entry, 0), keyword)) &&
+            RTEST(rb_equal(rb_ary_entry(entry, 1), argc == 3 ? segment : Qnil))) {
+            return rb_ary_entry(entry, 2);
+        }
+    }
+    return Qnil;
+}
+
+static VALUE
+schemurai_graph_resolve(VALUE self, VALUE index_value, VALUE reference)
+{
+    schemurai_graph_t *graph;
+    schemurai_node_t *node;
+    VALUE entry;
+    long index;
+    TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
+    node = schemurai_graph_node_at(graph, index_value);
+    for (index = 0; index < RARRAY_LEN(node->references); index++) {
+        entry = rb_ary_entry(node->references, index);
+        if (RTEST(rb_equal(rb_ary_entry(entry, 0), reference))) return rb_ary_entry(entry, 1);
+    }
+    return Qnil;
+}
+
+static VALUE
+schemurai_graph_lookup(VALUE self, VALUE uri)
+{
+    schemurai_graph_t *graph;
+    TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
+    return rb_hash_aref(graph->uri_registry, uri);
+}
+
+static VALUE
+schemurai_graph_dynamic_anchor(VALUE self, VALUE resource_index, VALUE name)
+{
+    schemurai_graph_t *graph;
+    VALUE anchors;
+    TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
+    anchors = rb_hash_aref(graph->dynamic_anchors, resource_index);
+    return NIL_P(anchors) ? Qnil : rb_hash_aref(anchors, name);
 }
 
 static VALUE
@@ -108,7 +346,7 @@ schemurai_graph_valid(VALUE self, VALUE instance)
 {
     schemurai_graph_t *graph;
     TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
-    return schemurai_generated_valid_type(graph->type_mask, instance) ? Qtrue : Qfalse;
+    return schemurai_generated_valid_type(graph->nodes[graph->root].type_mask, instance) ? Qtrue : Qfalse;
 }
 
 static VALUE
@@ -130,7 +368,7 @@ schemurai_graph_validate_repeated(VALUE self, VALUE instance, VALUE iterations_v
     TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
     for (index = 0; index < iterations; index++) {
         rb_thread_check_ints();
-        valid = schemurai_generated_valid_type(graph->type_mask, instance);
+        valid = schemurai_generated_valid_type(graph->nodes[graph->root].type_mask, instance);
     }
     return valid ? Qtrue : Qfalse;
 }
@@ -177,6 +415,21 @@ Init_schemurai_native(void)
     VALUE intrinsics = rb_define_module_under(native, "Intrinsics");
     VALUE graph = rb_define_class_under(native, "Graph", rb_cObject);
 
+    id_root = rb_intern("root");
+    id_nodes = rb_intern("nodes");
+    id_uri_registry = rb_intern("uri_registry");
+    id_dynamic_anchors = rb_intern("dynamic_anchors");
+    id_schema = rb_intern("schema");
+    id_dialect = rb_intern("dialect");
+    id_dialect_uri = rb_intern("dialect_uri");
+    id_base_uri = rb_intern("base_uri");
+    id_schema_path = rb_intern("schema_path");
+    id_resource_path = rb_intern("resource_path");
+    id_keyword_mask = rb_intern("keyword_mask");
+    id_format = rb_intern("format");
+    id_children = rb_intern("children");
+    id_references = rb_intern("references");
+
     rb_define_const(native, "BACKEND", ID2SYM(rb_intern("native")));
     rb_define_singleton_method(intrinsics, "boolean_instance?", schemurai_generated_boolean_instance, 1);
     rb_define_singleton_method(intrinsics, "exact_builtin?", schemurai_exact_builtin, 2);
@@ -187,6 +440,13 @@ Init_schemurai_native(void)
     rb_define_singleton_method(graph, "__for_shareability_test__", schemurai_graph_for_shareability_test, 1);
     rb_define_method(graph, "initialize", schemurai_graph_initialize, 1);
     rb_define_method(graph, "schema", schemurai_graph_schema, 0);
+    rb_define_method(graph, "node_count", schemurai_graph_node_count, 0);
+    rb_define_method(graph, "root_index", schemurai_graph_root_index, 0);
+    rb_define_method(graph, "node_metadata", schemurai_graph_node_metadata, 1);
+    rb_define_method(graph, "child", schemurai_graph_child, -1);
+    rb_define_method(graph, "resolve", schemurai_graph_resolve, 2);
+    rb_define_method(graph, "lookup", schemurai_graph_lookup, 1);
+    rb_define_method(graph, "dynamic_anchor", schemurai_graph_dynamic_anchor, 2);
     rb_define_method(graph, "valid?", schemurai_graph_valid, 1);
     rb_define_method(graph, "__make_shareable__", schemurai_graph_make_shareable, 0);
     rb_define_method(graph, "shareable_state?", schemurai_graph_shareable_state, 0);

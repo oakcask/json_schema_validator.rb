@@ -74,6 +74,17 @@ module Schemurai
         end
       end
 
+      def compile_native(schema, base_uri: nil, dialect: @default_dialect)
+        checkpoint = native_compilation_checkpoint
+        begin
+          root = compile(schema, base_uri: base_uri, dialect: dialect)
+          [root, native_snapshot(root)]
+        rescue Exception # rubocop:disable Lint/RescueException
+          restore_native_compilation_checkpoint(checkpoint)
+          raise
+        end
+      end
+
       def resolve(node, reference)
         if (resolved = @resolved_refs&.[](node))&.key?(reference)
           return resolved[reference]
@@ -118,6 +129,59 @@ module Schemurai
         Ractor.make_shareable(self)
       end
 
+      # Produces the representation-neutral input consumed by the native graph
+      # importer. References are resolved first so a native graph
+      # never needs to mutate after publication.
+      def native_snapshot(root)
+        index = 0
+        while index < nodes.length
+          node = nodes[index]
+          schema = node.schema
+          if schema.is_a?(Hash)
+            ["$ref", "$recursiveRef", "$dynamicRef"].each do |keyword|
+              resolve(node, schema[keyword]) if schema.key?(keyword)
+            end
+          end
+          index += 1
+        end
+
+        indexes = nodes.each_with_index.to_h.compare_by_identity
+        node_records = nodes.map do |node|
+          children = node.each_child.map do |keyword, segment, child|
+            [keyword, segment, indexes.fetch(child)]
+          end
+          references = if node.schema.is_a?(Hash)
+            ["$ref", "$recursiveRef", "$dynamicRef"].filter_map do |keyword|
+              next unless node.schema.key?(keyword)
+
+              reference = node.schema[keyword]
+              [reference, indexes.fetch(resolve(node, reference))]
+            end
+          else
+            []
+          end
+          {
+            schema: node.schema,
+            dialect: node.dialect.name,
+            dialect_uri: node.dialect.uri,
+            base_uri: node.base_uri,
+            schema_path: node.schema_path,
+            resource_path: node.resource_path,
+            keyword_mask: node.keyword_mask,
+            format: node.format&.name,
+            children: children,
+            references: references
+          }
+        end
+        registry = uri_registry.to_h { |uri, node| [uri, indexes.fetch(node)] }
+        anchors = @dynamic_anchors.each_with_object({}) do |(resource, names), result|
+          resource_index = indexes.fetch(resource.root)
+          result[resource_index] = names.to_h { |name, node| [name, indexes.fetch(node)] }
+        end
+
+        {root: indexes.fetch(root), nodes: node_records, uri_registry: registry, dynamic_anchors: anchors}
+      end
+
       private def compilation_changes
         {
           resources: {},
@@ -129,6 +193,41 @@ module Schemurai
           custom_dialects: {},
           requires_dynamic_scope: false
         }
+      end
+
+      private def native_compilation_checkpoint
+        {
+          compiled_roots: @compiled_roots.each_with_object({}.compare_by_identity) do |(schema, roots), copy|
+            copy[schema] = roots.dup
+          end,
+          resources: @resources.dup,
+          resource_nodes: @resources.to_h { |uri, resource| [uri, resource.nodes.dup] },
+          uri_registry: @uri_registry.dup,
+          nodes: @nodes.dup,
+          nodes_by_document_location: @nodes_by_document_location&.transform_values(&:dup),
+          resolved_refs: @resolved_refs&.transform_values(&:dup),
+          dynamic_anchors: @dynamic_anchors.transform_values(&:dup),
+          indexed_external_schemas: @indexed_external_schemas&.dup,
+          custom_dialects: @custom_dialects&.dup,
+          dynamic_scope: @dynamic_scope
+        }
+      end
+
+      private def restore_native_compilation_checkpoint(checkpoint)
+        checkpoint[:resources].each do |uri, resource|
+          nodes = checkpoint[:resource_nodes].fetch(uri)
+          resource.instance_variable_set(:@nodes, nodes.empty? ? nil : nodes)
+        end
+        @compiled_roots = checkpoint[:compiled_roots]
+        @resources = checkpoint[:resources]
+        @uri_registry = checkpoint[:uri_registry]
+        @nodes = checkpoint[:nodes]
+        @nodes_by_document_location = checkpoint[:nodes_by_document_location]
+        @resolved_refs = checkpoint[:resolved_refs]
+        @dynamic_anchors = checkpoint[:dynamic_anchors]
+        @indexed_external_schemas = checkpoint[:indexed_external_schemas]
+        @custom_dialects = checkpoint[:custom_dialects]
+        @dynamic_scope = checkpoint[:dynamic_scope]
       end
 
       private def compile_atomically
