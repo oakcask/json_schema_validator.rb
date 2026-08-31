@@ -24,6 +24,54 @@ RSpec.describe Schemurai do
     )
   end
 
+  def nested_path_schema
+    {
+      "properties" => {
+        "a/b" => {
+          "allOf" => [
+            {"properties" => {"~key" => {"type" => "integer", "minimum" => 2}}}
+          ]
+        }
+      }
+    }
+  end
+
+  def reference_path_schema
+    {
+      "properties" => {"x" => {"$ref" => "#/$defs/value"}},
+      "$defs" => {"value" => {"type" => "integer"}}
+    }
+  end
+
+  def expect_error(result, keyword:, instance_path:, schema_path:, message: nil)
+    error = result.errors.fetch(0)
+    expect(error).to have_attributes(keyword: keyword, instance_path: instance_path, schema_path: schema_path)
+    expect(error.message).to eq(message) if message
+  end
+
+  def expect_nested_path_error(result)
+    expect_error(
+      result,
+      keyword: "minimum",
+      instance_path: "/a~1b/~0key",
+      schema_path: "/properties/a~1b/allOf/0/properties/~0key/minimum"
+    )
+  end
+
+  def expect_combiner_error(result)
+    expect_error(
+      result,
+      keyword: "anyOf",
+      instance_path: "",
+      schema_path: "/anyOf",
+      message: "no subschema matched"
+    )
+  end
+
+  def expect_reference_path_error(result)
+    expect_error(result, keyword: "type", instance_path: "/x", schema_path: "/properties/x/$ref/type")
+  end
+
   it "keeps implementation constants private" do
     expected = %i[
       Error ResolutionError Result SchemaRegistry UnsupportedFormatError VERSION ValidationError Validator
@@ -46,51 +94,19 @@ RSpec.describe Schemurai do
   end
 
   it "reports escaped instance and schema paths for nested errors" do
-    schema = {
-      "properties" => {
-        "a/b" => {
-          "allOf" => [
-            {"properties" => {"~key" => {"type" => "integer", "minimum" => 2}}}
-          ]
-        }
-      }
-    }
-
-    error = described_class.validate(schema, {"a/b" => {"~key" => 1}}).errors.fetch(0)
-
-    expect(error).to have_attributes(
-      keyword: "minimum",
-      instance_path: "/a~1b/~0key",
-      schema_path: "/properties/a~1b/allOf/0/properties/~0key/minimum"
-    )
+    result = described_class.validate(nested_path_schema, {"a/b" => {"~key" => 1}})
+    expect_nested_path_error(result)
   end
 
   it "only reports the committed error from failed alternatives" do
     schema = {"anyOf" => [{"type" => "integer"}, {"type" => "string", "minLength" => 5}]}
-
-    errors = described_class.validate(schema, "x").errors
-
-    expect(errors.map(&:to_h)).to contain_exactly(
-      keyword: "anyOf",
-      instance_path: "",
-      schema_path: "/anyOf",
-      message: "no subschema matched"
-    )
+    result = described_class.validate(schema, "x")
+    expect_combiner_error(result)
   end
 
   it "keeps the evaluation path when an error occurs through a reference" do
-    schema = {
-      "properties" => {"x" => {"$ref" => "#/$defs/value"}},
-      "$defs" => {"value" => {"type" => "integer"}}
-    }
-
-    error = described_class.validate(schema, {"x" => "bad"}).errors.fetch(0)
-
-    expect(error).to have_attributes(
-      keyword: "type",
-      instance_path: "/x",
-      schema_path: "/properties/x/$ref/type"
-    )
+    result = described_class.validate(reference_path_schema, {"x" => "bad"})
+    expect_reference_path_error(result)
   end
 
   it "resolves registered external schemas", :aggregate_failures do
