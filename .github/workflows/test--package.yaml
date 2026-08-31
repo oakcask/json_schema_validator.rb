@@ -24,17 +24,39 @@ permissions:
   contents: read
 
 jobs:
-  smoke-test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
       - name: Build gem
         run: gem build schemurai.gemspec --output schemurai.gem
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: schemurai-package
+          path: schemurai.gem
+          if-no-files-found: error
+
+  smoke-test:
+    needs: build
+    strategy:
+      matrix:
+        ruby-version:
+          - "3.4"
+          - "4.0"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          sparse-checkout: test/package_smoke_test.rb
+          sparse-checkout-cone-mode: false
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: schemurai-package
       - name: Install gem
         run: gem install --local schemurai.gem --no-document
-      - name: Run package smoke test outside the checkout
-        run: |
-          cp test/package_smoke_test.rb "${RUNNER_TEMP}/package_smoke_test.rb"
-          cd "${RUNNER_TEMP}"
-          ruby package_smoke_test.rb
+      - name: Run package smoke test
+        run: ruby test/package_smoke_test.rb
