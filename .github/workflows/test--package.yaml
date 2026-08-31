@@ -7,7 +7,7 @@ on:
     paths:
       - .github/workflows/test--package.yaml
       - .ruby-version
-      - json_schema_validator.gemspec
+      - schemurai.gemspec
       - lib/**/*
       - README.md
       - test/package_smoke_test.rb
@@ -15,7 +15,7 @@ on:
     paths:
       - .github/workflows/test--package.yaml
       - .ruby-version
-      - json_schema_validator.gemspec
+      - schemurai.gemspec
       - lib/**/*
       - README.md
       - test/package_smoke_test.rb
@@ -30,9 +30,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
       - name: Build gem
-        run: gem build json_schema_validator.gemspec --output json_schema_validator.gem
+        run: gem build schemurai.gemspec --output schemurai.gem
       - name: Install gem
-        run: gem install --local json_schema_validator.gem --no-document
+        run: gem install --local schemurai.gem --no-document
       - name: Run package smoke test outside the checkout
         run: |
           cp test/package_smoke_test.rb "${RUNNER_TEMP}/package_smoke_test.rb"

@@ -2,7 +2,7 @@
 
 require_relative "dialect"
 
-module JsonSchemaValidator
+module Schemurai
   module Internal
     module DialectKeywords
       COMMON = {

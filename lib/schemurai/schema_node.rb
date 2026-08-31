@@ -2,7 +2,7 @@
 
 require_relative "formats"
 
-module JsonSchemaValidator
+module Schemurai
   module Internal
     class SchemaNode
       MISSING_SEGMENT = Object.new.freeze

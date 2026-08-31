@@ -2,7 +2,7 @@
 
 require_relative "../meta_schemas"
 
-module JsonSchemaValidator
+module Schemurai
   module Internal
     module MetaSchemas
       module Draft7

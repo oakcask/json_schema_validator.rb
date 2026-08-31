@@ -1,11 +1,11 @@
 # frozen_string_literal: true
 
 require_relative "spec_helper"
-require_relative "../lib/json_schema_validator/schema_graph"
+require_relative "../lib/schemurai/schema_graph"
 
-RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
+RSpec.describe "Schemurai::Internal::SchemaGraph" do
   def internal
-    JsonSchemaValidator.const_get(:Internal)
+    Schemurai.const_get(:Internal)
   end
 
   def graph_class
@@ -106,7 +106,7 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
 
     it "leaves the graph unchanged when a nested schema raises", :aggregate_failures do
       expect { graph.compile(failing_schema) }
-        .to raise_error(JsonSchemaValidator::UnsupportedFormatError, /unsupported format "unknown"/)
+        .to raise_error(Schemurai::UnsupportedFormatError, /unsupported format "unknown"/)
       expect(graph_state(graph)).to eq(state_before)
       expect_same_collections(graph_collections(graph, existing), collections_before)
       expect(graph.node_at("https://example.test/existing")).to equal(existing)
@@ -154,7 +154,7 @@ RSpec.describe "JsonSchemaValidator::Internal::SchemaGraph" do
 
     it "uses the policy of a declared dialect" do
       dialect_class.register(ref_sibling_dialect)
-      expect(JsonSchemaValidator.valid?(ref_sibling_schema, 1)).to be(false)
+      expect(Schemurai.valid?(ref_sibling_schema, 1)).to be(false)
     end
   end
 

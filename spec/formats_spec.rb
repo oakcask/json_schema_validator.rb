@@ -2,9 +2,9 @@
 
 require_relative "spec_helper"
 
-RSpec.describe "JsonSchemaValidator::Internal::Formats" do
+RSpec.describe "Schemurai::Internal::Formats" do
   def formats
-    JsonSchemaValidator.const_get(:Internal).const_get(:Formats)
+    Schemurai.const_get(:Internal).const_get(:Formats)
   end
 
   def expect_cases(format, cases)

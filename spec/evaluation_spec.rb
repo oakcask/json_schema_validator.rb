@@ -2,9 +2,9 @@
 
 require_relative "spec_helper"
 
-RSpec.describe "JsonSchemaValidator::Evaluation" do
+RSpec.describe "Schemurai::Evaluation" do
   def evaluation_class
-    JsonSchemaValidator.const_get(:Evaluation)
+    Schemurai.const_get(:Evaluation)
   end
 
   describe "#merge" do

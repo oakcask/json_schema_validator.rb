@@ -5,7 +5,7 @@ require "json"
 root = File.expand_path("..", __dir__)
 $LOAD_PATH.unshift(ENV.fetch("JSON_SCHEMA_VALIDATOR_LIB", File.join(root, "lib")))
 
-require "json_schema_validator"
+require "schemurai"
 
 suite_root = File.join(root, "references", "JSON-Schema-Test-Suite")
 remote_root = File.join(suite_root, "remotes")
@@ -29,7 +29,7 @@ groups = (required_files.sort + optional_files.sort).flat_map do |file|
 end
 
 def build(groups, remotes)
-  registry = JsonSchemaValidator::SchemaRegistry.new(schemas: remotes)
+  registry = Schemurai::SchemaRegistry.new(schemas: remotes)
   groups.map do |group|
     group.merge(
       validator: registry.compile(group.fetch(:schema), content: group.fetch(:content))

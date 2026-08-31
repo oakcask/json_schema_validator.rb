@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "json_schema_validator"
+require "schemurai"
 
 schema = {
   "$schema" => "https://json-schema.org/draft/2020-12/schema",
@@ -50,7 +50,7 @@ order = {
   "created_at" => "2026-08-31T10:15:00+09:00"
 }
 
-validator = JsonSchemaValidator.compile(schema, format: true)
+validator = Schemurai.compile(schema, format: true)
 abort "expected the order to be valid" unless validator.valid?(order)
 
 invalid_order = order.merge(
