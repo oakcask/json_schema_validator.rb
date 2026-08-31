@@ -796,6 +796,15 @@ boolean results and ordered detailed errors.
 
 ### 7. Complete concurrency and lifecycle safety
 
+Status: complete. The Ractor-safety audit rejects mutable Ruby globals and
+requires every retained Ruby value to participate in marking, compaction, and
+shareability. Independent-validator stress covers threads and non-main Ractors,
+and repeated validation proves per-call paths and errors are not retained.
+Generated and handwritten long loops contain interrupt checkpoints. A generated
+map accounts for every maintained-source `ensure` and `rescue` region, while
+address- and undefined-behavior-sanitizer CI exercise compilation, validation,
+exceptions, interruption cleanup, and GC compaction.
+
 - Re-audit the extension's Ractor-safe declaration after every expansion of
   global and retained state.
 - Verify shareable typed data and retained Ruby values.

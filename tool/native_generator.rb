@@ -54,6 +54,7 @@ module Schemurai
       end
 
       audit_translation_units!(ir:, units:)
+      validate_cleanup_region_map!(units:)
 
       required = %w[name ruby_forms operands result ruby_semantics c_lowering allocates invokes_ruby raises triggers_gc gvl cleanup rooting restriction refinement guard dispatch available fixtures]
       entries = intrinsics.fetch("intrinsics") + intrinsics.fetch("graph_intrinsics")
@@ -96,6 +97,48 @@ module Schemurai
       end
 
       true
+    end
+
+    module_function def cleanup_region_map(units: load_json("native/translation_units.json"))
+      sources = units.fetch("units").group_by { |unit| unit.fetch("source") }
+      regions = sources.sort.flat_map do |source_name, source_units|
+        parsed = Prism.parse(root.join(source_name).read)
+        unless parsed.success?
+          failure = parsed.errors.first
+          raise GenerationError, "#{source_name}:#{failure.location.start_line}: #{failure.message}"
+        end
+
+        exception_regions(parsed.value).map do |node|
+          {
+            "source" => source_name,
+            "units" => source_units.map { |unit| unit.fetch("name") }.sort,
+            "kind" => node.is_a?(Prism::EnsureNode) ? "ensure" : "rescue",
+            "start_line" => node.location.start_line,
+            "end_line" => node.location.end_line,
+            "lowering" => node.is_a?(Prism::EnsureNode) ? "idempotent_cleanup" : "protected_region"
+          }
+        end
+      end
+
+      {"version" => 1, "regions" => regions.sort_by { |region| [region.fetch("source"), region.fetch("start_line"), region.fetch("kind")] }}
+    end
+
+    module_function def exception_regions(node, result = [])
+      result << node if node.is_a?(Prism::EnsureNode) || node.is_a?(Prism::RescueNode)
+      node.compact_child_nodes.each { |child| exception_regions(child, result) }
+      result
+    end
+
+    module_function def validate_cleanup_region_map!(units: load_json("native/translation_units.json"))
+      committed = load_json("native/cleanup_regions.json")
+      expected = cleanup_region_map(units:)
+      return true if committed == expected
+
+      raise GenerationError, "native/cleanup_regions.json does not match every maintained source ensure/rescue region"
+    end
+
+    module_function def generate_cleanup_region_map(output = "native/cleanup_regions.json")
+      Pathname(output).binwrite("#{JSON.pretty_generate(cleanup_region_map)}\n")
     end
 
     module_function def validate_owned_region!(region, entries: nil)
@@ -239,6 +282,7 @@ module Schemurai
         "intrinsics" => Digest::SHA256.file(root.join("native/intrinsics.json")).hexdigest,
         "lowering_ir" => Digest::SHA256.file(root.join("native/lowering_ir.json")).hexdigest,
         "translation_units" => Digest::SHA256.file(root.join("native/translation_units.json")).hexdigest,
+        "cleanup_regions" => Digest::SHA256.file(root.join("native/cleanup_regions.json")).hexdigest,
         "prism" => Prism::VERSION,
         "generator_version" => VERSION.to_s
       }
@@ -474,7 +518,7 @@ module Schemurai
             if (type == Qundef) return SCHEMURAI_TYPE_ANY;
             if (!RB_TYPE_P(type, T_ARRAY)) return schemurai_generated_type_name_mask(type);
             for (index = 0; index < RARRAY_LEN(type); index++) {
-                rb_thread_check_ints();
+                if ((((unsigned long)index) & 0x3ffUL) == 0) rb_thread_check_ints();
                 mask |= schemurai_generated_type_name_mask(RARRAY_AREF(type, index));
             }
             return mask;

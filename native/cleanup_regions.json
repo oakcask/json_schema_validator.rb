@@ -1,0 +1,235 @@
+{
+  "version": 1,
+  "regions": [
+    {
+      "source": "lib/schemurai/evaluator.rb",
+      "units": [
+        "content",
+        "evaluation",
+        "result_construction"
+      ],
+      "kind": "ensure",
+      "start_line": 44,
+      "end_line": 46,
+      "lowering": "idempotent_cleanup"
+    },
+    {
+      "source": "lib/schemurai/evaluator.rb",
+      "units": [
+        "content",
+        "evaluation",
+        "result_construction"
+      ],
+      "kind": "rescue",
+      "start_line": 108,
+      "end_line": 109,
+      "lowering": "protected_region"
+    },
+    {
+      "source": "lib/schemurai/evaluator.rb",
+      "units": [
+        "content",
+        "evaluation",
+        "result_construction"
+      ],
+      "kind": "ensure",
+      "start_line": 110,
+      "end_line": 112,
+      "lowering": "idempotent_cleanup"
+    },
+    {
+      "source": "lib/schemurai/evaluator.rb",
+      "units": [
+        "content",
+        "evaluation",
+        "result_construction"
+      ],
+      "kind": "ensure",
+      "start_line": 122,
+      "end_line": 124,
+      "lowering": "idempotent_cleanup"
+    },
+    {
+      "source": "lib/schemurai/evaluator.rb",
+      "units": [
+        "content",
+        "evaluation",
+        "result_construction"
+      ],
+      "kind": "rescue",
+      "start_line": 205,
+      "end_line": 206,
+      "lowering": "protected_region"
+    },
+    {
+      "source": "lib/schemurai/evaluator.rb",
+      "units": [
+        "content",
+        "evaluation",
+        "result_construction"
+      ],
+      "kind": "rescue",
+      "start_line": 213,
+      "end_line": 214,
+      "lowering": "protected_region"
+    },
+    {
+      "source": "lib/schemurai/evaluator.rb",
+      "units": [
+        "content",
+        "evaluation",
+        "result_construction"
+      ],
+      "kind": "rescue",
+      "start_line": 349,
+      "end_line": 350,
+      "lowering": "protected_region"
+    },
+    {
+      "source": "lib/schemurai/evaluator.rb",
+      "units": [
+        "content",
+        "evaluation",
+        "result_construction"
+      ],
+      "kind": "ensure",
+      "start_line": 389,
+      "end_line": 391,
+      "lowering": "idempotent_cleanup"
+    },
+    {
+      "source": "lib/schemurai/evaluator.rb",
+      "units": [
+        "content",
+        "evaluation",
+        "result_construction"
+      ],
+      "kind": "rescue",
+      "start_line": 401,
+      "end_line": 403,
+      "lowering": "protected_region"
+    },
+    {
+      "source": "lib/schemurai/evaluator.rb",
+      "units": [
+        "content",
+        "evaluation",
+        "result_construction"
+      ],
+      "kind": "ensure",
+      "start_line": 404,
+      "end_line": 406,
+      "lowering": "idempotent_cleanup"
+    },
+    {
+      "source": "lib/schemurai/evaluator.rb",
+      "units": [
+        "content",
+        "evaluation",
+        "result_construction"
+      ],
+      "kind": "rescue",
+      "start_line": 537,
+      "end_line": 538,
+      "lowering": "protected_region"
+    },
+    {
+      "source": "lib/schemurai/evaluator.rb",
+      "units": [
+        "content",
+        "evaluation",
+        "result_construction"
+      ],
+      "kind": "ensure",
+      "start_line": 695,
+      "end_line": 698,
+      "lowering": "idempotent_cleanup"
+    },
+    {
+      "source": "lib/schemurai/evaluator.rb",
+      "units": [
+        "content",
+        "evaluation",
+        "result_construction"
+      ],
+      "kind": "rescue",
+      "start_line": 785,
+      "end_line": 787,
+      "lowering": "protected_region"
+    },
+    {
+      "source": "lib/schemurai/evaluator.rb",
+      "units": [
+        "content",
+        "evaluation",
+        "result_construction"
+      ],
+      "kind": "ensure",
+      "start_line": 811,
+      "end_line": 815,
+      "lowering": "idempotent_cleanup"
+    },
+    {
+      "source": "lib/schemurai/evaluator.rb",
+      "units": [
+        "content",
+        "evaluation",
+        "result_construction"
+      ],
+      "kind": "ensure",
+      "start_line": 822,
+      "end_line": 826,
+      "lowering": "idempotent_cleanup"
+    },
+    {
+      "source": "lib/schemurai/schema_graph.rb",
+      "units": [
+        "schema_compilation"
+      ],
+      "kind": "rescue",
+      "start_line": 82,
+      "end_line": 84,
+      "lowering": "protected_region"
+    },
+    {
+      "source": "lib/schemurai/schema_graph.rb",
+      "units": [
+        "schema_compilation"
+      ],
+      "kind": "rescue",
+      "start_line": 314,
+      "end_line": 315,
+      "lowering": "protected_region"
+    },
+    {
+      "source": "lib/schemurai/schema_graph.rb",
+      "units": [
+        "schema_compilation"
+      ],
+      "kind": "rescue",
+      "start_line": 533,
+      "end_line": 538,
+      "lowering": "protected_region"
+    },
+    {
+      "source": "lib/schemurai/schema_graph.rb",
+      "units": [
+        "schema_compilation"
+      ],
+      "kind": "rescue",
+      "start_line": 536,
+      "end_line": 537,
+      "lowering": "protected_region"
+    },
+    {
+      "source": "lib/schemurai/schema_graph.rb",
+      "units": [
+        "schema_compilation"
+      ],
+      "kind": "rescue",
+      "start_line": 584,
+      "end_line": 585,
+      "lowering": "protected_region"
+    }
+  ]
+}

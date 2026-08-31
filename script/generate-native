@@ -4,4 +4,6 @@
 require_relative "../tool/native_generator"
 
 output = ARGV.fetch(0, "ext/schemurai/generated_bootstrap.c")
+cleanup_map = ARGV.fetch(1, "native/cleanup_regions.json")
+Schemurai::NativeGenerator.generate_cleanup_region_map(cleanup_map)
 Schemurai::NativeGenerator.generate(output)

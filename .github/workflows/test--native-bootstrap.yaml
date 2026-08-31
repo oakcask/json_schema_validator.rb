@@ -59,3 +59,52 @@ jobs:
         run: bundle exec rspec -Ilib -Iext/schemurai test/native_intrinsic_test.rb test/native_type_slice_test.rb test/native_schema_compilation_test.rb test/native_evaluator_test.rb
       - name: Compare Ruby and native evaluators
         run: bundle exec ruby script/native-differential
+
+  address-sanitizer:
+    runs-on: ubuntu-24.04
+    env:
+      ASAN_OPTIONS: detect_leaks=0
+      BUNDLE_ONLY: default generator test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: asan-release
+          bundler-cache: true
+          cache-version: address-sanitizer-${{ hashFiles('Gemfile.lock') }}
+      - name: Configure native extension with address sanitizer
+        run: ruby extconf.rb
+        working-directory: ext/schemurai
+      - name: Compile address-sanitized committed generated source
+        run: make
+        working-directory: ext/schemurai
+      - name: Exercise compilation, validation, exceptions, and GC compaction under address sanitizer
+        run: bundle exec rspec -Ilib -Iext/schemurai test/native_lifecycle_test.rb
+
+  undefined-behavior-sanitizer:
+    runs-on: ubuntu-latest
+    env:
+      BUNDLE_ONLY: default generator test
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+          cache-version: undefined-behavior-sanitizer-${{ hashFiles('Gemfile.lock') }}
+      - name: Configure native extension with undefined behavior sanitizer
+        run: ruby extconf.rb
+        working-directory: ext/schemurai
+        env:
+          CFLAGS: -fsanitize=undefined -fno-omit-frame-pointer -O1
+          DLDFLAGS: -fsanitize=undefined
+      - name: Compile undefined-behavior-sanitized committed generated source
+        run: make
+        working-directory: ext/schemurai
+      - name: Exercise compilation, validation, exceptions, and GC compaction under undefined behavior sanitizer
+        run: bundle exec rspec -Ilib -Iext/schemurai test/native_lifecycle_test.rb

@@ -56,6 +56,14 @@ static ID id_format;
 static ID id_children;
 static ID id_references;
 
+/* These IDs are initialized once while the extension is loaded and are immutable afterwards. */
+
+static void
+schemurai_interrupt_checkpoint(size_t index)
+{
+    if ((index & 0x3ffUL) == 0) rb_thread_check_ints();
+}
+
 static VALUE
 schemurai_hash_symbol(VALUE hash, ID key)
 {
@@ -156,6 +164,7 @@ schemurai_graph_make_shareable(VALUE self)
     if (graph->shareable) return self;
 
     for (index = 0; index < graph->node_count; index++) {
+        schemurai_interrupt_checkpoint(index);
         schemurai_node_t *node = &graph->nodes[index];
         rb_ractor_make_shareable(node->schema);
         rb_ractor_make_shareable(node->dialect);
@@ -197,6 +206,7 @@ schemurai_graph_initialize(VALUE self, VALUE snapshot)
 
     /* Validate all raising numeric conversions before acquiring native memory. */
     for (index = 0; index < count; index++) {
+        schemurai_interrupt_checkpoint((size_t)index);
         VALUE record = rb_ary_entry(records, index);
         Check_Type(record, T_HASH);
         (void)NUM2ULONG(schemurai_hash_symbol(record, id_keyword_mask));
@@ -207,6 +217,7 @@ schemurai_graph_initialize(VALUE self, VALUE snapshot)
 
     graph->nodes = ALLOC_N(schemurai_node_t, (size_t)count);
     for (index = 0; index < count; index++) {
+        schemurai_interrupt_checkpoint((size_t)index);
         VALUE record = rb_ary_entry(records, index);
         schemurai_node_t *node = &graph->nodes[index];
         node->schema = schemurai_hash_symbol(record, id_schema);
@@ -321,6 +332,7 @@ schemurai_graph_child(int argc, VALUE *argv, VALUE self)
     TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
     node = schemurai_graph_node_at(graph, index_value);
     for (index = 0; index < RARRAY_LEN(node->children); index++) {
+        schemurai_interrupt_checkpoint((size_t)index);
         entry = rb_ary_entry(node->children, index);
         if (RTEST(rb_equal(rb_ary_entry(entry, 0), keyword)) &&
             RTEST(rb_equal(rb_ary_entry(entry, 1), argc == 3 ? segment : Qnil))) {
@@ -340,6 +352,7 @@ schemurai_graph_resolve(VALUE self, VALUE index_value, VALUE reference)
     TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
     node = schemurai_graph_node_at(graph, index_value);
     for (index = 0; index < RARRAY_LEN(node->references); index++) {
+        schemurai_interrupt_checkpoint((size_t)index);
         entry = rb_ary_entry(node->references, index);
         if (RTEST(rb_equal(rb_ary_entry(entry, 0), reference))) return rb_ary_entry(entry, 1);
     }
@@ -398,7 +411,7 @@ schemurai_graph_validate_repeated(VALUE self, VALUE instance, VALUE iterations_v
 
     TypedData_Get_Struct(self, schemurai_graph_t, &schemurai_graph_type, graph);
     for (index = 0; index < iterations; index++) {
-        rb_thread_check_ints();
+        schemurai_interrupt_checkpoint((size_t)index);
         valid = schemurai_generated_valid_type(graph->nodes[graph->root].type_mask, instance);
     }
     return valid ? Qtrue : Qfalse;

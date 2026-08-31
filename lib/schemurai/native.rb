@@ -169,7 +169,7 @@ module Schemurai
       end
 
       def __validate_repeated__(instance, iterations)
-        iterations.times { @evaluator.valid?(instance) }
+        @graph.__validate_repeated__(instance, iterations)
       end
     end
 

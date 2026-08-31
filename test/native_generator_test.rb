@@ -35,6 +35,17 @@ RSpec.describe Schemurai::NativeGenerator do
     expect(inventories.fetch("evaluation")).to include("exception_region", "iterator")
   end
 
+  it "maps every maintained source ensure and rescue region to generated cleanup policy" do
+    map = described_class.cleanup_region_map
+
+    expect(described_class.validate_cleanup_region_map!).to be(true)
+    expect(map.fetch("regions")).not_to be_empty
+    expect(map.fetch("regions").map { |region| region.fetch("kind") }.uniq).to contain_exactly("ensure", "rescue")
+    expect(map.fetch("regions")).to all(include("source", "units", "start_line", "end_line", "lowering"))
+    expect(map.fetch("regions").select { |region| region.fetch("kind") == "ensure" })
+      .to all(include("lowering" => "idempotent_cleanup"))
+  end
+
   it "lowers every named root to deterministic typed syntax IR" do
     units = described_class.lower_translation_units!
 
@@ -81,6 +92,15 @@ RSpec.describe Schemurai::NativeGenerator do
       described_class.generate(output)
 
       expect(File.binread(output)).to eq(File.binread("ext/schemurai/generated_bootstrap.c"))
+    end
+  end
+
+  it "reproduces the committed cleanup-region map byte for byte" do
+    Dir.mktmpdir do |directory|
+      output = File.join(directory, "cleanup_regions.json")
+      described_class.generate_cleanup_region_map(output)
+
+      expect(File.binread(output)).to eq(File.binread("native/cleanup_regions.json"))
     end
   end
 
