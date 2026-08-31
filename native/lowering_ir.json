@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "types": {
+    "ruby_value": {"representation": "VALUE", "ownership": "borrowed"},
+    "refined_ruby_value": {"representation": "VALUE", "proofs": ["exact_builtin", "accepted_subclass", "json_kind_union"]},
+    "graph_pointer": {"representation": "schemurai_graph *", "ownership": "borrowed"},
+    "node_index": {"representation": "size_t", "ownership": "plain"},
+    "evaluation_context": {"representation": "schemurai_evaluation_context *", "ownership": "borrowed"},
+    "c_boolean": {"representation": "bool", "ownership": "plain"},
+    "integer_size": {"representation": "size_t", "ownership": "plain"},
+    "control_flow_region": {"representation": "region_id", "ownership": "lexical"},
+    "owned_allocation": {"representation": "void *", "ownership": "owned"}
+  },
+  "ownership_states": ["borrowed", "rooted", "owned", "moved", "released"],
+  "rules": {
+    "ruby_api_liveness": "Every VALUE live across an allocating Ruby C API call must be stack-visible or registered as a movable GC root.",
+    "owned_cleanup": "Every owned allocation must move to an owner or enter an idempotent ensure cleanup before a raising call.",
+    "dominance": "A class refinement is usable only in the guard's dominated control-flow region.",
+    "invalidation": "A callback, generic Ruby invocation, or mutation invalidates accepted-subclass and union refinements unless its intrinsic explicitly preserves them.",
+    "exactness": "Exact built-in and accepted-subclass refinements are distinct and cannot be substituted."
+  }
+}

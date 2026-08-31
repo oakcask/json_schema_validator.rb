@@ -106,6 +106,7 @@ DEPENDENCIES
   benchmark-ips
   json-schema!
   json_schemer!
+  prism (= 1.9.0)
   rspec
   rubocop-rspec
   ruby-prof

@@ -1,0 +1,7 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../tool/native_generator"
+
+output = ARGV.fetch(0, "ext/schemurai/generated_bootstrap.c")
+Schemurai::NativeGenerator.generate(output)

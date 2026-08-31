@@ -1,0 +1,57 @@
+name: test / native bootstrap
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/test--native-bootstrap.yaml
+      - .ruby-version
+      - Gemfile
+      - Gemfile.lock
+      - ext/**/*
+      - lib/schemurai/backend.rb
+      - lib/schemurai/native.rb
+      - native/**/*
+      - script/generate-native
+      - test/native_*.rb
+      - tool/**/*
+  pull_request:
+    paths:
+      - .github/workflows/test--native-bootstrap.yaml
+      - .ruby-version
+      - Gemfile
+      - Gemfile.lock
+      - ext/**/*
+      - lib/schemurai/backend.rb
+      - lib/schemurai/native.rb
+      - native/**/*
+      - script/generate-native
+      - test/native_*.rb
+      - tool/**/*
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    env:
+      BUNDLE_ONLY: default generator test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+          cache-version: ${{ hashFiles('Gemfile.lock') }}
+      - name: Verify deterministic generation and rejection contracts
+        run: bundle exec rspec test/native_generator_test.rb
+      - name: Configure native extension
+        run: ruby extconf.rb
+        working-directory: ext/schemurai
+      - name: Compile committed generated source
+        run: make
+        working-directory: ext/schemurai
+      - name: Run Ruby and C intrinsic contracts
+        run: bundle exec rspec -Ilib -Iext/schemurai test/native_intrinsic_test.rb

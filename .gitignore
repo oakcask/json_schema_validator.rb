@@ -1,1 +1,6 @@
 /vendor
+/ext/**/Makefile
+/ext/**/mkmf.log
+/ext/**/*.bundle
+/ext/**/*.o
+/ext/**/*.so

@@ -2,9 +2,10 @@
 
 ## Status
 
-Revised after the Ruby-to-C feasibility findings and the plan-risk spike
-documented in `NATIVE_BACKEND_SPIKE.md`; production implementation has not
-started.
+Workstreams 1 and 2 are complete. The compatibility contract is frozen, and
+the deterministic generator, typed IR and intrinsic manifests, extension
+bootstrap, strict loader, and Ruby/C intrinsic contract harness are in place.
+Workstream 3, the lifecycle-complete `type` vertical slice, has not started.
 
 This document describes the complete migration from the current Ruby
 implementation to a generated CRuby native extension. The work is not complete
@@ -619,6 +620,12 @@ out-of-domain schemas are rejected before retention; and Ruby-only CI proves
 that native code cannot load.
 
 ### 2. Bootstrap generation and define the typed IR and intrinsic manifest
+
+Status: complete. The CRuby 4.0 bootstrap CI compiles committed generated C,
+checks byte-for-byte regeneration with pinned Prism, runs rejection tests, and
+compares the Ruby and C intrinsic implementations, including exceptional and
+non-main-Ractor execution. The source-gem smoke test builds and loads the
+extension without the generator dependency.
 
 - Make the whole gem CRuby 4.x-only, encode the initial `>= 4.0`, `< 4.1` range
   in the gemspec, and compile the lifecycle/API spike on every selected minor.

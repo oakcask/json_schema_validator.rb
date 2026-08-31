@@ -8,6 +8,7 @@ on:
       - .github/workflows/test--package.yaml
       - .ruby-version
       - schemurai.gemspec
+      - ext/**/*
       - lib/**/*
       - README.md
       - test/package_smoke_test.rb
@@ -16,6 +17,7 @@ on:
       - .github/workflows/test--package.yaml
       - .ruby-version
       - schemurai.gemspec
+      - ext/**/*
       - lib/**/*
       - README.md
       - test/package_smoke_test.rb
@@ -42,7 +44,6 @@ jobs:
     strategy:
       matrix:
         ruby-version:
-          - "3.4"
           - "4.0"
     runs-on: ubuntu-latest
     steps:

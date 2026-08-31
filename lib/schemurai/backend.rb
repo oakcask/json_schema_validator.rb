@@ -28,7 +28,7 @@ module Schemurai
     module_function def native_available?
       return false if native_loading_prohibited?
 
-      require NATIVE_FEATURE
+      load_native!
       true
     rescue LoadError
       false
@@ -40,6 +40,9 @@ module Schemurai
       end
 
       require NATIVE_FEATURE
+      unless Schemurai::Native.const_defined?(:Validator, false)
+        raise LoadError, "native bootstrap is available but validation dispatch is not implemented"
+      end
     rescue LoadError => error
       raise LoadError, "native backend is unavailable: #{error.message}"
     end

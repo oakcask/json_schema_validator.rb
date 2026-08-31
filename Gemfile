@@ -7,6 +7,10 @@ group :test do
   gem "rspec", require: false
 end
 
+group :generator do
+  gem "prism", "= 1.9.0", require: false
+end
+
 group :lint do
   # use `bundle exec rubocop` to lint.
   gem "standard", require: false

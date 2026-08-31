@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
 require "schemurai"
+require "schemurai/native"
+
+abort "expected the packaged native bootstrap" unless Schemurai::Native::BACKEND == :native
+abort "expected the generated boolean intrinsic" unless Schemurai::Native::Intrinsics.boolean_instance?(true)
 
 schema = {
   "$schema" => "https://json-schema.org/draft/2020-12/schema",

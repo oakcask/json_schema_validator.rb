@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "supported_cruby": ["4.0"],
+  "intrinsics": [
+    {
+      "name": "object_identity", "ruby_forms": ["literal.equal?(value)"],
+      "operands": ["ruby_value", "ruby_value"], "result": "c_boolean",
+      "ruby_semantics": "Object#equal? identity", "c_lowering": "($left == $right)",
+      "allocates": false, "invokes_ruby": false, "raises": false, "triggers_gc": false,
+      "gvl": "either", "cleanup": "none", "rooting": "borrowed VALUE arguments remain stack-visible",
+      "restriction": "literal receiver only", "refinement": "none", "guard": "none",
+      "dispatch": "native", "available": ["4.0"],
+      "fixtures": [{"literal": true, "values": [true, false, null, 0, "true"]}, {"literal": false, "values": [true, false, null, 0, "false"]}]
+    },
+    {
+      "name": "exact_builtin_guard", "ruby_forms": ["value.instance_of?(BuiltinClass)"],
+      "operands": ["ruby_value", "ruby_value"], "result": "c_boolean",
+      "ruby_semantics": "Object#instance_of? for an allowlisted built-in class", "c_lowering": "RB_TYPE_P or rb_obj_class equality",
+      "allocates": false, "invokes_ruby": false, "raises": true, "triggers_gc": false,
+      "gvl": "required", "cleanup": "none", "rooting": "borrowed VALUE argument remains stack-visible",
+      "restriction": "allowlisted built-in class constant", "refinement": "exact_builtin", "guard": "self",
+      "dispatch": "guarded_specialization", "available": ["4.0"],
+      "fixtures": [{"class": "Hash"}, {"class": "Array"}, {"class": "String"}, {"class": "Integer"}, {"class": "Float"}, {"class": "TrueClass"}, {"class": "FalseClass"}, {"class": "NilClass"}]
+    },
+    {
+      "name": "finite_float", "ruby_forms": ["value.finite?"], "operands": ["refined_ruby_value"], "result": "c_boolean",
+      "ruby_semantics": "Float#finite? for an exact built-in Float", "c_lowering": "isfinite(RFLOAT_VALUE($value))",
+      "allocates": false, "invokes_ruby": false, "raises": true, "triggers_gc": false, "gvl": "required",
+      "cleanup": "none", "rooting": "borrowed VALUE remains stack-visible", "restriction": "exact built-in Float",
+      "refinement": "exact_builtin", "guard": "exact_builtin_guard(Float)", "dispatch": "guarded_specialization", "available": ["4.0"],
+      "fixtures": [{"values": [0.0, 1.5, "NaN", "Infinity", "-Infinity"]}, {"exception": "non-Float operand"}]
+    },
+    {
+      "name": "integral_float", "ruby_forms": ["value.to_i == value"], "operands": ["refined_ruby_value"], "result": "c_boolean",
+      "ruby_semantics": "Whether an exact finite built-in Float has no fractional component", "c_lowering": "modf(RFLOAT_VALUE($value), &integral) == 0.0",
+      "allocates": false, "invokes_ruby": false, "raises": true, "triggers_gc": false, "gvl": "required",
+      "cleanup": "none", "rooting": "borrowed VALUE remains stack-visible", "restriction": "exact finite built-in Float",
+      "refinement": "exact_builtin", "guard": "exact_builtin_guard(Float) and finite_float", "dispatch": "guarded_specialization", "available": ["4.0"],
+      "fixtures": [{"values": [0.0, 1.0, -2.0, 1.5, -2.25]}, {"exception": "non-Float operand"}]
+    },
+    {
+      "name": "mask_intersects", "ruby_forms": ["(left & right) != 0"], "operands": ["integer_size", "integer_size"], "result": "c_boolean",
+      "ruby_semantics": "Unsigned type-mask intersection", "c_lowering": "($left & $right) != 0",
+      "allocates": false, "invokes_ruby": false, "raises": true, "triggers_gc": false, "gvl": "required",
+      "cleanup": "none", "rooting": "none", "restriction": "non-negative values representable as unsigned long",
+      "refinement": "none", "guard": "typed operands", "dispatch": "native", "available": ["4.0"],
+      "fixtures": [{"left": 5, "right": 1}, {"left": 4, "right": 2}, {"exception": "non-integer operand"}]
+    }
+  ],
+  "graph_intrinsics": [
+    {
+      "name": "graph_schema", "ruby_forms": ["node.schema"], "receiver": "graph_pointer", "operands": ["node_index"], "result": "ruby_value",
+      "ruby_semantics": "Return the retained schema value for a compiled node", "c_lowering": "schemurai_graph_schema",
+      "allocates": false, "invokes_ruby": false, "raises": false, "triggers_gc": false, "gvl": "required",
+      "cleanup": "none", "rooting": "result remains rooted by the marked graph", "restriction": "valid node index",
+      "refinement": "native graph pointer", "guard": "typed entry signature", "dispatch": "native", "available": ["4.0"], "fixtures": []
+    },
+    {
+      "name": "graph_child", "ruby_forms": ["node.child(keyword)"], "receiver": "graph_pointer", "operands": ["node_index", "ruby_value"], "result": "node_index",
+      "ruby_semantics": "Return the compiled child selected by keyword and path segment", "c_lowering": "schemurai_graph_child",
+      "allocates": false, "invokes_ruby": false, "raises": true, "triggers_gc": false, "gvl": "required",
+      "cleanup": "none", "rooting": "keyword VALUE remains stack-visible", "restriction": "valid node index and retained keyword",
+      "refinement": "native graph pointer", "guard": "typed entry signature", "dispatch": "native", "available": ["4.0"], "fixtures": []
+    },
+    {
+      "name": "graph_resolve", "ruby_forms": ["@graph.resolve(node, reference)"], "receiver": "graph_pointer", "operands": ["node_index", "ruby_value", "evaluation_context"], "result": "node_index",
+      "ruby_semantics": "Resolve a reference using the compiled graph and current dynamic scope", "c_lowering": "schemurai_graph_resolve",
+      "allocates": false, "invokes_ruby": false, "raises": true, "triggers_gc": false, "gvl": "required",
+      "cleanup": "evaluation context owns idempotent unwind cleanup", "rooting": "reference VALUE remains stack-visible",
+      "restriction": "valid graph, node, and evaluation context", "refinement": "native graph and evaluation-context pointers",
+      "guard": "typed entry signature", "dispatch": "native", "available": ["4.0"], "fixtures": []
+    },
+    {
+      "name": "node_type_mask", "ruby_forms": ["node.type_mask"], "receiver": "graph_pointer", "operands": ["node_index"], "result": "integer_size",
+      "ruby_semantics": "Return the precompiled JSON Schema type mask for a node", "c_lowering": "schemurai_node_type_mask",
+      "allocates": false, "invokes_ruby": false, "raises": false, "triggers_gc": false, "gvl": "either",
+      "cleanup": "none", "rooting": "none", "restriction": "valid graph and node index", "refinement": "native graph pointer",
+      "guard": "typed entry signature", "dispatch": "native", "available": ["4.0"], "fixtures": []
+    }
+  ],
+  "generic_calls": [
+    {"site": "type_integer_out_of_domain_finite", "source": "Schemurai::Internal::Evaluator#type?", "method": "finite?", "classification": "cold_out_of_domain_compatibility", "fixtures": ["exceptional-numeric-method"]},
+    {"site": "type_integer_out_of_domain_to_i", "source": "Schemurai::Internal::Evaluator#type?", "method": "to_i", "classification": "cold_out_of_domain_compatibility", "fixtures": ["coercible-numeric-subclass", "exceptional-numeric-method"]},
+    {"site": "type_integer_out_of_domain_equality", "source": "Schemurai::Internal::Evaluator#type?", "method": "==", "classification": "cold_out_of_domain_compatibility", "fixtures": ["coercible-numeric-subclass"]}
+  ]
+}

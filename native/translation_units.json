@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "units": [
+    {"name": "bootstrap_type", "owner": "generated", "source": "native/source/bootstrap.rb", "roots": [{"root": "Schemurai::NativeSource.boolean_instance?", "method": "boolean_instance?", "entry": ["ruby_value"], "result": "c_boolean"}]},
+    {"name": "schema_compilation", "owner": "generated", "source": "lib/schemurai/schema_graph.rb", "roots": [{"root": "Schemurai::Internal::SchemaGraph#compile", "method": "compile", "entry": ["graph_pointer", "ruby_value"], "result": "node_index"}]},
+    {"name": "evaluation", "owner": "generated", "source": "lib/schemurai/evaluator.rb", "roots": [{"root": "Schemurai::Internal::Evaluator#evaluate_valid", "method": "evaluate_valid", "entry": ["graph_pointer", "node_index", "ruby_value", "evaluation_context"], "result": "c_boolean"}, {"root": "Schemurai::Internal::Evaluator#evaluate", "method": "evaluate", "entry": ["graph_pointer", "node_index", "ruby_value", "evaluation_context"], "result": "ruby_value"}]},
+    {"name": "dialect", "owner": "generated", "source": "lib/schemurai/dialect.rb", "roots": [{"root": "Schemurai::Internal::Dialect.resolve", "method": "resolve", "entry": ["ruby_value"], "result": "ruby_value"}]},
+    {"name": "format", "owner": "generated", "source": "lib/schemurai/formats.rb", "roots": [{"root": "Schemurai::Internal::Formats::Registry.resolve", "method": "resolve", "entry": ["ruby_value"], "result": "ruby_value"}]},
+    {"name": "content", "owner": "generated", "source": "lib/schemurai/evaluator.rb", "roots": [{"root": "Schemurai::Internal::Evaluator#valid_content?", "method": "valid_content?", "entry": ["refined_ruby_value", "refined_ruby_value"], "result": "c_boolean"}, {"root": "Schemurai::Internal::Evaluator#check_content", "method": "check_content", "entry": ["evaluation_context", "refined_ruby_value", "refined_ruby_value"], "result": "ruby_value"}]},
+    {"name": "result_construction", "owner": "generated", "source": "lib/schemurai/evaluator.rb", "roots": [{"root": "Schemurai::Internal::Evaluator#validate", "method": "validate", "entry": ["graph_pointer", "node_index", "ruby_value", "evaluation_context"], "result": "ruby_value"}, {"root": "Schemurai::Internal::Evaluator#add_error", "method": "add_error", "entry": ["evaluation_context", "ruby_value", "ruby_value"], "result": "ruby_value"}]}
+  ],
+  "handwritten_c": {
+    "files": ["ext/schemurai/runtime.c"],
+    "allowed": ["loader", "representation", "ownership", "gc", "ruby_c_api_intrinsics"],
+    "forbidden": ["schema_semantics", "validation_semantics", "dialect_semantics", "format_semantics", "content_semantics", "result_semantics"]
+  }
+}
