@@ -124,7 +124,7 @@ RSpec.describe "native type vertical slice" do
     expect(validator.valid?(2.5)).to be(false)
   end
 
-  it "observes asynchronous interrupts in a long native loop" do
+  it "observes asynchronous interrupts in a long native loop", :asynchronous_interrupt do
     validator = Schemurai.compile({"type" => "integer"}, backend: :native)
     started = Queue.new
     worker = Thread.new do

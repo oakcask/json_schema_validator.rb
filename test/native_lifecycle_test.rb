@@ -98,7 +98,7 @@ RSpec.describe "native concurrency and lifecycle safety" do
     expect(results).to eq(Array.new(2) { [[true, ["/value"]]] })
   end
 
-  it "observes interrupts in the native repeated-validation loop and remains reusable" do
+  it "observes interrupts in the native repeated-validation loop and remains reusable", :asynchronous_interrupt do
     validator = Schemurai.compile({"type" => "integer"}, backend: :native)
     implementation = native_validator(validator)
     graph = native_graph(validator)
