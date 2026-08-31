@@ -535,7 +535,7 @@ module Schemurai
             if (type == Qundef) return SCHEMURAI_TYPE_ANY;
             if (!RB_TYPE_P(type, T_ARRAY)) return schemurai_generated_type_name_mask(type);
             for (index = 0; index < RARRAY_LEN(type); index++) {
-                if ((((unsigned long)index) & 0x3ffUL) == 0) {
+                if (index != 0 && (((unsigned long)index) & 0x3ffUL) == 0) {
                     rb_thread_schedule();
                     rb_thread_check_ints();
                 }

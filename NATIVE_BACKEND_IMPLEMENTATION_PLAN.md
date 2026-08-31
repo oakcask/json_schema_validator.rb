@@ -847,11 +847,13 @@ Status: complete. A correctness-gated harness records raw interpreter and YJIT
 samples for the official-suite build and execution workloads, repeated
 validation, Ruby allocations, formats, detailed errors, native typed-data
 memory, threads, and Ractors. The retained CRuby 4.0.6 measurements select Ruby
-as the production default: native regresses all timed workloads and allocates
-3.14 times as many Ruby objects for repeated validation. The decision record,
-reproduction configuration, raw samples, and concrete revisit rule are
-committed; a GVL-free snapshot remains unjustified without a profile showing it
-addresses a measured bottleneck.
+as the production default: one YJIT repeated-validation workload improves, but
+native materially regresses build, detailed errors, allocations, and
+concurrency, and allocates 3.14 times as many Ruby objects for repeated
+validation. The decision record, reproduction configuration, raw samples,
+bottleneck analysis, and concrete revisit rule are committed; a GVL-free
+snapshot remains unjustified without a profile showing it addresses a measured
+bottleneck.
 
 - Run existing build, suite, repeated-validation, allocation, format, and
   detailed-error benchmarks against both backends.

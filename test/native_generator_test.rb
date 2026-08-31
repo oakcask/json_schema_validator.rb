@@ -106,6 +106,7 @@ RSpec.describe Schemurai::NativeGenerator do
     expect(source.scan("rb_str_new_static").length).to eq(1)
     expect(source.scan('rb_intern_const("Complex")').length).to eq(1)
     expect(source).to include("schemurai_generated_id_finite", "schemurai_generated_id_to_i")
+    expect(source).to include("index != 0 && (((unsigned long)index) & 0x3ffUL) == 0")
   end
 
   it "reproduces the committed cleanup-region map byte for byte" do

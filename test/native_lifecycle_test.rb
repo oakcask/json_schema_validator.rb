@@ -23,6 +23,7 @@ RSpec.describe "native concurrency and lifecycle safety" do
     global_ids = source.scan(/^static ID (\w+);$/).flatten
 
     expect(source).to include("rb_ext_ractor_safe(true)")
+    expect(source).to include("index != 0 && (index & 0x3ffUL) == 0")
     expect(global_values).to contain_exactly(
       "mSchemurai",
       "mSchemuraiNative",
