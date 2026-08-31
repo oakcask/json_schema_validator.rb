@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "schemurai/version"
 require_relative "schemurai/formats"
 require_relative "schemurai/schema_graph"
 require_relative "schemurai/evaluator"
