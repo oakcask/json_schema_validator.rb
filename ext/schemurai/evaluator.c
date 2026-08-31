@@ -1,6 +1,7 @@
 #include "ruby.h"
 #include "ruby/encoding.h"
 #include "ruby/ractor.h"
+#include "ruby/st.h"
 #include <stdbool.h>
 #include <limits.h>
 
@@ -23,26 +24,72 @@ static const rb_data_type_t evaluator_type;
 
 static VALUE cEvaluator;
 static VALUE mNative;
+static VALUE cached_string_roots;
+static st_table *cached_strings;
 static ID id_schema, id_child, id_resolve, id_dialect, id_resource, id_root;
 static ID id_keyword_mask, id_dynamic_scope_p, id_dynamic_anchor;
 static ID id_ref_siblings_p, id_format_assertion_p, id_format, id_call, id_keywords;
 static ID id_finite_p, id_to_i, id_remainder, id_zero_p, id_positive_p;
 static ID id_match_p, id_length, id_object_id;
+static ID id_key_p, id_keys, id_rational, id_to_s, id_compare, id_include_p;
+static ID id_gsub, id_new, id_message, id_end_with_p, id_split, id_strict_decode64;
+static ID id_parse, id_each, id_name, id_content;
+static ID id_resolution_error, id_base64, id_json, id_parser_error;
+static ID id_validation_error, id_result, id_regexp_error;
+static VALUE sym_number, sym_boolean, sym_native;
+static VALUE sym_keyword, sym_instance_path, sym_schema_path, sym_message;
 static VALUE cResolutionError;
 static VALUE mBase64, mJSON, cJSONParserError;
 static VALUE cValidationError, cResult;
 static VALUE cRegexpError;
 
+typedef struct {
+    const char *bytes;
+    long length;
+} cached_string_spec_t;
+
+#define CACHED_STRING(value) {value, (long)(sizeof(value) - 1)}
+static const cached_string_spec_t cached_string_specs[] = {
+    CACHED_STRING(" or "), CACHED_STRING("#"), CACHED_STRING("$dynamicAnchor"),
+    CACHED_STRING("$dynamicRef"), CACHED_STRING("$recursiveAnchor"), CACHED_STRING("$recursiveRef"),
+    CACHED_STRING("$ref"), CACHED_STRING("/"), CACHED_STRING("additionalItems"),
+    CACHED_STRING("additionalProperties"), CACHED_STRING("allOf"), CACHED_STRING("anyOf"),
+    CACHED_STRING("application/json"), CACHED_STRING("array items are not unique"), CACHED_STRING("base64"),
+    CACHED_STRING("boolean schema is false"), CACHED_STRING("const"), CACHED_STRING("contains"),
+    CACHED_STRING("contentEncoding"), CACHED_STRING("contentMediaType"), CACHED_STRING("dependencies"),
+    CACHED_STRING("dependentRequired"), CACHED_STRING("dependentSchemas"), CACHED_STRING("else"),
+    CACHED_STRING("enum"), CACHED_STRING("exclusiveMaximum"), CACHED_STRING("exclusiveMinimum"),
+    CACHED_STRING("falseSchema"), CACHED_STRING("format"), CACHED_STRING("if"),
+    CACHED_STRING("invalid regular expression"), CACHED_STRING("items"), CACHED_STRING("maxContains"),
+    CACHED_STRING("maxItems"), CACHED_STRING("maxLength"), CACHED_STRING("maxProperties"),
+    CACHED_STRING("maximum"), CACHED_STRING("minContains"), CACHED_STRING("minItems"),
+    CACHED_STRING("minLength"), CACHED_STRING("minProperties"), CACHED_STRING("minimum"),
+    CACHED_STRING("multipleOf"), CACHED_STRING("no subschema matched"), CACHED_STRING("not"),
+    CACHED_STRING("number is not a multiple"), CACHED_STRING("numeric limit was exceeded"), CACHED_STRING("oneOf"),
+    CACHED_STRING("pattern"), CACHED_STRING("patternProperties"), CACHED_STRING("prefixItems"),
+    CACHED_STRING("properties"), CACHED_STRING("propertyNames"), CACHED_STRING("required"),
+    CACHED_STRING("size limit was exceeded"), CACHED_STRING("string content is invalid"),
+    CACHED_STRING("string does not match pattern"), CACHED_STRING("subschema matched"), CACHED_STRING("then"),
+    CACHED_STRING("type"), CACHED_STRING("unevaluatedItems"), CACHED_STRING("unevaluatedProperties"),
+    CACHED_STRING("uniqueItems"), CACHED_STRING("value does not equal const"),
+    CACHED_STRING("value is not in enum"), CACHED_STRING("~"), CACHED_STRING("~0"), CACHED_STRING("~1")
+};
+#undef CACHED_STRING
+
 static VALUE
 key(const char *name)
 {
-    return rb_str_new_cstr(name);
+    st_data_t value;
+    if (!st_lookup(cached_strings, (st_data_t)name, &value)) {
+        rb_raise(rb_eRuntimeError, "uncached native evaluator string: %s", name);
+    }
+    return (VALUE)value;
 }
 
 static bool
 hash_has(VALUE hash, const char *name)
 {
-    return RTEST(rb_funcall(hash, rb_intern("key?"), 1, key(name)));
+    return RTEST(rb_funcall(hash, id_key_p, 1, key(name)));
 }
 
 static VALUE
@@ -98,8 +145,8 @@ valid_type(VALUE schema, VALUE value)
 static VALUE
 json_kind(VALUE value)
 {
-    if (number_p(value)) return ID2SYM(rb_intern("number"));
-    if (value == Qtrue || value == Qfalse) return ID2SYM(rb_intern("boolean"));
+    if (number_p(value)) return sym_number;
+    if (value == Qtrue || value == Qfalse) return sym_boolean;
     return rb_obj_class(value);
 }
 
@@ -111,10 +158,10 @@ json_hash_equal(VALUE left, VALUE right)
     VALUE keys;
     long i;
     if (RHASH_SIZE(left) != RHASH_SIZE(right)) return false;
-    keys = rb_funcall(left, rb_intern("keys"), 0);
+    keys = rb_funcall(left, id_keys, 0);
     for (i = 0; i < RARRAY_LEN(keys); i++) {
         VALUE item_key = rb_ary_entry(keys, i);
-        if (!RTEST(rb_funcall(right, rb_intern("key?"), 1, item_key))) return false;
+        if (!RTEST(rb_funcall(right, id_key_p, 1, item_key))) return false;
         if (!json_equal(rb_hash_aref(left, item_key), rb_hash_aref(right, item_key))) return false;
     }
     return true;
@@ -154,13 +201,13 @@ static VALUE
 decimal(VALUE value)
 {
     if (RB_INTEGER_TYPE_P(value) || rb_obj_is_kind_of(value, rb_cRational)) return value;
-    return rb_funcall(rb_mKernel, rb_intern("Rational"), 1, rb_funcall(value, rb_intern("to_s"), 0));
+    return rb_funcall(rb_mKernel, id_rational, 1, rb_funcall(value, id_to_s, 0));
 }
 
 static int
 compare(VALUE left, VALUE right)
 {
-    return rb_cmpint(rb_funcall(left, rb_intern("<=>"), 1, right), left, right);
+    return rb_cmpint(rb_funcall(left, id_compare, 1, right), left, right);
 }
 
 static bool
@@ -201,7 +248,7 @@ evaluation_new(bool valid)
 static bool
 array_includes(VALUE array, VALUE value)
 {
-    return RTEST(rb_funcall(array, rb_intern("include?"), 1, value));
+    return RTEST(rb_funcall(array, id_include_p, 1, value));
 }
 
 static void
@@ -223,9 +270,9 @@ evaluation_merge(evaluation_t *left, evaluation_t right)
 static void
 append_pointer_segment(VALUE pointer, VALUE segment)
 {
-    VALUE string = rb_funcall(segment, rb_intern("to_s"), 0);
-    string = rb_funcall(string, rb_intern("gsub"), 2, key("~"), key("~0"));
-    string = rb_funcall(string, rb_intern("gsub"), 2, key("/"), key("~1"));
+    VALUE string = rb_funcall(segment, id_to_s, 0);
+    string = rb_funcall(string, id_gsub, 2, key("~"), key("~0"));
+    string = rb_funcall(string, id_gsub, 2, key("/"), key("~1"));
     rb_str_cat_cstr(pointer, "/");
     rb_str_append(pointer, string);
 }
@@ -233,7 +280,7 @@ append_pointer_segment(VALUE pointer, VALUE segment)
 static VALUE
 pointer_for(VALUE path, VALUE final_segment)
 {
-    VALUE pointer = rb_str_new_cstr("");
+    VALUE pointer = rb_str_buf_new(0);
     long i;
     for (i = 0; i < RARRAY_LEN(path); i++) append_pointer_segment(pointer, rb_ary_entry(path, i));
     if (final_segment != Qundef) append_pointer_segment(pointer, final_segment);
@@ -245,12 +292,12 @@ add_error(schemurai_evaluator_t *evaluator, const char *keyword, VALUE message, 
 {
     VALUE arguments[1];
     VALUE options = rb_hash_new();
-    rb_hash_aset(options, ID2SYM(rb_intern("keyword")), key(keyword));
-    rb_hash_aset(options, ID2SYM(rb_intern("instance_path")), pointer_for(evaluator->instance_path, Qundef));
-    rb_hash_aset(options, ID2SYM(rb_intern("schema_path")), pointer_for(evaluator->schema_path, append_keyword ? key(keyword) : Qundef));
-    rb_hash_aset(options, ID2SYM(rb_intern("message")), message);
+    rb_hash_aset(options, sym_keyword, key(keyword));
+    rb_hash_aset(options, sym_instance_path, pointer_for(evaluator->instance_path, Qundef));
+    rb_hash_aset(options, sym_schema_path, pointer_for(evaluator->schema_path, append_keyword ? key(keyword) : Qundef));
+    rb_hash_aset(options, sym_message, message);
     arguments[0] = options;
-    rb_ary_push(evaluator->errors, rb_funcallv_kw(cValidationError, rb_intern("new"), 1, arguments, RB_PASS_KEYWORDS));
+    rb_ary_push(evaluator->errors, rb_funcallv_kw(cValidationError, id_new, 1, arguments, RB_PASS_KEYWORDS));
 }
 
 static evaluation_t
@@ -298,7 +345,7 @@ resolve_target(schemurai_evaluator_t *evaluator, VALUE node, VALUE reference, bo
     *failed = false;
     if (!state) return target;
     if (!rb_obj_is_kind_of(rb_errinfo(), cResolutionError)) rb_jump_tag(state);
-    evaluator->resolution_error = rb_funcall(rb_errinfo(), rb_intern("message"), 0);
+    evaluator->resolution_error = rb_funcall(rb_errinfo(), id_message, 0);
     rb_set_errinfo(Qnil);
     *failed = true;
     return Qnil;
@@ -328,7 +375,7 @@ recursive_target(schemurai_evaluator_t *evaluator, VALUE node, VALUE reference, 
     VALUE target = resolve_target(evaluator, node, reference, failed);
     VALUE schema;
     long i;
-    if (*failed || !RTEST(rb_funcall(rb_funcall(reference, rb_intern("to_s"), 0), rb_intern("end_with?"), 1, key("#")))) return target;
+    if (*failed || !RTEST(rb_funcall(rb_funcall(reference, id_to_s, 0), id_end_with_p, 1, key("#")))) return target;
     schema = rb_funcall(target, id_schema, 0);
     if (!RB_TYPE_P(schema, T_HASH) || hash_get(schema, "$recursiveAnchor") != Qtrue) return target;
     for (i = 0; i < RARRAY_LEN(evaluator->dynamic_scope); i++) {
@@ -346,8 +393,8 @@ dynamic_target(schemurai_evaluator_t *evaluator, VALUE node, VALUE reference, bo
     VALUE string, parts, fragment, schema;
     long i;
     if (*failed) return target;
-    string = rb_funcall(reference, rb_intern("to_s"), 0);
-    parts = rb_funcall(string, rb_intern("split"), 2, key("#"), INT2NUM(2));
+    string = rb_funcall(reference, id_to_s, 0);
+    parts = rb_funcall(string, id_split, 2, key("#"), INT2NUM(2));
     if (RARRAY_LEN(parts) < 2) return target;
     fragment = rb_ary_entry(parts, 1);
     if (RSTRING_LEN(fragment) == 0 || RSTRING_PTR(fragment)[0] == '/') return target;
@@ -474,10 +521,10 @@ content_call(VALUE arguments)
     VALUE schema = rb_ary_entry(arguments, 0);
     VALUE decoded = rb_ary_entry(arguments, 1);
     if (RTEST(rb_equal(hash_get(schema, "contentEncoding"), key("base64")))) {
-        decoded = rb_funcall(mBase64, rb_intern("strict_decode64"), 1, decoded);
+        decoded = rb_funcall(mBase64, id_strict_decode64, 1, decoded);
     }
     if (RTEST(rb_equal(hash_get(schema, "contentMediaType"), key("application/json")))) {
-        rb_funcall(mJSON, rb_intern("parse"), 1, decoded);
+        rb_funcall(mJSON, id_parse, 1, decoded);
     }
     return Qtrue;
 }
@@ -550,12 +597,12 @@ valid_object_property(schemurai_evaluator_t *evaluator, VALUE node, VALUE schema
     VALUE properties = hash_get(schema, "properties"), patterns = hash_get(schema, "patternProperties");
     bool matched = false;
     long index;
-    if (RB_TYPE_P(properties, T_HASH) && RTEST(rb_funcall(properties, rb_intern("key?"), 1, name))) {
+    if (RB_TYPE_P(properties, T_HASH) && RTEST(rb_funcall(properties, id_key_p, 1, name))) {
         matched = true;
         if (!evaluate_valid(evaluator, node_child(node, "properties", name), item)) return false;
     }
     if (RB_TYPE_P(patterns, T_HASH)) {
-        VALUE pattern_names = rb_funcall(patterns, rb_intern("keys"), 0);
+        VALUE pattern_names = rb_funcall(patterns, id_keys, 0);
         for (index = 0; index < RARRAY_LEN(pattern_names); index++) {
             VALUE pattern = rb_ary_entry(pattern_names, index);
             if (!RTEST(rb_funcall(ecma_regexp(evaluator, pattern), id_match_p, 1, name))) continue;
@@ -584,18 +631,18 @@ valid_object_each(RB_BLOCK_CALL_FUNC_ARGLIST(yielded, callback_argument))
 static bool
 valid_object(schemurai_evaluator_t *evaluator, VALUE node, VALUE schema, VALUE value)
 {
-    VALUE names = rb_funcall(value, rb_intern("keys"), 0);
+    VALUE names = rb_funcall(value, id_keys, 0);
     long i, j, length = RARRAY_LEN(names);
     if (hash_has(schema, "maxProperties") && length > NUM2LONG(hash_get(schema, "maxProperties"))) return false;
     if (hash_has(schema, "minProperties") && length < NUM2LONG(hash_get(schema, "minProperties"))) return false;
     if (hash_has(schema, "required")) {
         VALUE required = hash_get(schema, "required");
-        for (i = 0; i < RARRAY_LEN(required); i++) if (!RTEST(rb_funcall(value, rb_intern("key?"), 1, rb_ary_entry(required, i)))) return false;
+        for (i = 0; i < RARRAY_LEN(required); i++) if (!RTEST(rb_funcall(value, id_key_p, 1, rb_ary_entry(required, i)))) return false;
     }
     if (rb_obj_class(value) != rb_cHash) {
         VALUE context = rb_ary_new_from_args(3, evaluator->self, node, schema);
-        if (rb_block_call(value, rb_intern("each"), 0, NULL, valid_object_each, context) == Qfalse) return false;
-        names = rb_funcall(value, rb_intern("keys"), 0);
+        if (rb_block_call(value, id_each, 0, NULL, valid_object_each, context) == Qfalse) return false;
+        names = rb_funcall(value, id_keys, 0);
         length = RARRAY_LEN(names);
     } else {
         for (i = 0; i < length; i++) {
@@ -609,36 +656,36 @@ valid_object(schemurai_evaluator_t *evaluator, VALUE node, VALUE schema, VALUE v
     }
     if (hash_has(schema, "dependencies")) {
         VALUE dependencies = hash_get(schema, "dependencies");
-        VALUE dependency_names = rb_funcall(dependencies, rb_intern("keys"), 0);
+        VALUE dependency_names = rb_funcall(dependencies, id_keys, 0);
         for (i = 0; i < RARRAY_LEN(dependency_names); i++) {
             VALUE name = rb_ary_entry(dependency_names, i), dependency;
-            if (!RTEST(rb_funcall(value, rb_intern("key?"), 1, name))) continue;
+            if (!RTEST(rb_funcall(value, id_key_p, 1, name))) continue;
             dependency = rb_hash_aref(dependencies, name);
             if (RB_TYPE_P(dependency, T_ARRAY)) {
                 for (j = 0; j < RARRAY_LEN(dependency); j++) {
-                    if (!RTEST(rb_funcall(value, rb_intern("key?"), 1, rb_ary_entry(dependency, j)))) return false;
+                    if (!RTEST(rb_funcall(value, id_key_p, 1, rb_ary_entry(dependency, j)))) return false;
                 }
             } else if (!evaluate_valid(evaluator, node_child(node, "dependencies", name), value)) return false;
         }
     }
     if (hash_has(schema, "dependentRequired")) {
         VALUE dependencies = hash_get(schema, "dependentRequired");
-        VALUE dependency_names = rb_funcall(dependencies, rb_intern("keys"), 0);
+        VALUE dependency_names = rb_funcall(dependencies, id_keys, 0);
         for (i = 0; i < RARRAY_LEN(dependency_names); i++) {
             VALUE name = rb_ary_entry(dependency_names, i), required;
-            if (!RTEST(rb_funcall(value, rb_intern("key?"), 1, name))) continue;
+            if (!RTEST(rb_funcall(value, id_key_p, 1, name))) continue;
             required = rb_hash_aref(dependencies, name);
             for (j = 0; j < RARRAY_LEN(required); j++) {
-                if (!RTEST(rb_funcall(value, rb_intern("key?"), 1, rb_ary_entry(required, j)))) return false;
+                if (!RTEST(rb_funcall(value, id_key_p, 1, rb_ary_entry(required, j)))) return false;
             }
         }
     }
     if (hash_has(schema, "dependentSchemas")) {
         VALUE dependencies = hash_get(schema, "dependentSchemas");
-        VALUE dependency_names = rb_funcall(dependencies, rb_intern("keys"), 0);
+        VALUE dependency_names = rb_funcall(dependencies, id_keys, 0);
         for (i = 0; i < RARRAY_LEN(dependency_names); i++) {
             VALUE name = rb_ary_entry(dependency_names, i);
-            if (RTEST(rb_funcall(value, rb_intern("key?"), 1, name)) &&
+            if (RTEST(rb_funcall(value, id_key_p, 1, name)) &&
                 !evaluate_valid(evaluator, node_child(node, "dependentSchemas", name), value)) return false;
         }
     }
@@ -793,12 +840,12 @@ evaluate_tracking_mode(schemurai_evaluator_t *evaluator, VALUE node, VALUE insta
 
     if (rb_obj_is_kind_of(instance, rb_cHash)) {
         VALUE properties = hash_get(schema, "properties"), patterns = hash_get(schema, "patternProperties");
-        names = rb_funcall(instance, rb_intern("keys"), 0);
+        names = rb_funcall(instance, id_keys, 0);
         for (i = 0; i < RARRAY_LEN(names); i++) {
             VALUE name = rb_ary_entry(names, i); bool matched = false;
-            if (RB_TYPE_P(properties, T_HASH) && RTEST(rb_funcall(properties, rb_intern("key?"), 1, name))) matched = true;
+            if (RB_TYPE_P(properties, T_HASH) && RTEST(rb_funcall(properties, id_key_p, 1, name))) matched = true;
             if (RB_TYPE_P(patterns, T_HASH)) {
-                VALUE pattern_names = rb_funcall(patterns, rb_intern("keys"), 0);
+                VALUE pattern_names = rb_funcall(patterns, id_keys, 0);
                 for (j = 0; j < RARRAY_LEN(pattern_names); j++) {
                     if (RTEST(rb_funcall(ecma_regexp(evaluator, rb_ary_entry(pattern_names, j)), id_match_p, 1, name))) matched = true;
                 }
@@ -807,20 +854,20 @@ evaluate_tracking_mode(schemurai_evaluator_t *evaluator, VALUE node, VALUE insta
             if (matched) array_add(result.properties, name);
         }
         if (hash_has(schema, "dependencies")) {
-            VALUE dependencies = hash_get(schema, "dependencies"); names = rb_funcall(dependencies, rb_intern("keys"), 0);
+            VALUE dependencies = hash_get(schema, "dependencies"); names = rb_funcall(dependencies, id_keys, 0);
             for (i = 0; i < RARRAY_LEN(names); i++) {
                 VALUE name = rb_ary_entry(names, i), dependency = rb_hash_aref(dependencies, name);
-                if (!RB_TYPE_P(dependency, T_ARRAY) && RTEST(rb_funcall(instance, rb_intern("key?"), 1, name))) {
+                if (!RB_TYPE_P(dependency, T_ARRAY) && RTEST(rb_funcall(instance, id_key_p, 1, name))) {
                     child_result = evaluate_tracking(evaluator, node_child(node, "dependencies", name), instance);
                     if (child_result.valid) evaluation_merge(&result, child_result);
                 }
             }
         }
         if (hash_has(schema, "dependentSchemas")) {
-            VALUE dependencies = hash_get(schema, "dependentSchemas"); names = rb_funcall(dependencies, rb_intern("keys"), 0);
+            VALUE dependencies = hash_get(schema, "dependentSchemas"); names = rb_funcall(dependencies, id_keys, 0);
             for (i = 0; i < RARRAY_LEN(names); i++) {
                 VALUE name = rb_ary_entry(names, i);
-                if (RTEST(rb_funcall(instance, rb_intern("key?"), 1, name))) {
+                if (RTEST(rb_funcall(instance, id_key_p, 1, name))) {
                     child_result = evaluate_tracking(evaluator, node_child(node, "dependentSchemas", name), instance);
                     if (child_result.valid) evaluation_merge(&result, child_result);
                 }
@@ -840,7 +887,7 @@ unevaluated:
         }
     }
     if (apply_unevaluated && result.valid && rb_obj_is_kind_of(instance, rb_cHash) && hash_has(schema, "unevaluatedProperties")) {
-        VALUE child = node_child(node, "unevaluatedProperties", Qnil); names = rb_funcall(instance, rb_intern("keys"), 0);
+        VALUE child = node_child(node, "unevaluatedProperties", Qnil); names = rb_funcall(instance, id_keys, 0);
         for (i = 0; i < RARRAY_LEN(names); i++) {
             VALUE name = rb_ary_entry(names, i);
             if (!array_includes(result.properties, name)) {
@@ -968,7 +1015,7 @@ evaluate_detailed(schemurai_evaluator_t *evaluator, VALUE node, VALUE instance)
             else if (!matched) add_error(evaluator, "pattern", key("string does not match pattern"), true);
         }
         if (format_asserted(evaluator, node) && !RTEST(rb_funcall(rb_funcall(node, id_format, 0), id_call, 1, instance))) {
-            VALUE name = rb_funcall(rb_funcall(node, id_format, 0), rb_intern("name"), 0);
+            VALUE name = rb_funcall(rb_funcall(node, id_format, 0), id_name, 0);
             add_error(evaluator, "format", rb_sprintf("string is not a valid %"PRIsVALUE, name), true);
         }
         if (evaluator->validate_content && !valid_content(schema, instance)) {
@@ -1011,7 +1058,7 @@ evaluate_detailed(schemurai_evaluator_t *evaluator, VALUE node, VALUE instance)
         }
     }
     if ((mask & 64UL) && rb_obj_is_kind_of(instance, rb_cHash)) {
-        VALUE names = rb_funcall(instance, rb_intern("keys"), 0);
+        VALUE names = rb_funcall(instance, id_keys, 0);
         VALUE required = hash_get(schema, "required");
         VALUE properties = hash_get(schema, "properties"), patterns = hash_get(schema, "patternProperties");
         long length = RARRAY_LEN(names), j;
@@ -1019,15 +1066,15 @@ evaluate_detailed(schemurai_evaluator_t *evaluator, VALUE node, VALUE instance)
         if (hash_has(schema, "minProperties") && length < NUM2LONG(hash_get(schema, "minProperties"))) add_error(evaluator, "minProperties", key("size limit was exceeded"), true);
         if (!NIL_P(required)) for (i = 0; i < RARRAY_LEN(required); i++) {
             VALUE name = rb_ary_entry(required, i);
-            if (!RTEST(rb_funcall(instance, rb_intern("key?"), 1, name))) add_error(evaluator, "required", rb_sprintf("required property %"PRIsVALUE" is missing", rb_inspect(name)), true);
+            if (!RTEST(rb_funcall(instance, id_key_p, 1, name))) add_error(evaluator, "required", rb_sprintf("required property %"PRIsVALUE" is missing", rb_inspect(name)), true);
         }
         for (i = 0; i < length; i++) {
             VALUE name = rb_ary_entry(names, i), item = rb_hash_aref(instance, name); bool matched = false;
-            if (RB_TYPE_P(properties, T_HASH) && RTEST(rb_funcall(properties, rb_intern("key?"), 1, name))) {
+            if (RB_TYPE_P(properties, T_HASH) && RTEST(rb_funcall(properties, id_key_p, 1, name))) {
                 matched = true; evaluate_detailed_at(evaluator, node_child(node, "properties", name), item, name, key("properties"), name);
             }
             if (RB_TYPE_P(patterns, T_HASH)) {
-                VALUE pattern_names = rb_funcall(patterns, rb_intern("keys"), 0);
+                VALUE pattern_names = rb_funcall(patterns, id_keys, 0);
                 for (j = 0; j < RARRAY_LEN(pattern_names); j++) {
                     VALUE pattern = rb_ary_entry(pattern_names, j);
                     if (RTEST(rb_funcall(ecma_regexp(evaluator, pattern), id_match_p, 1, name))) {
@@ -1041,35 +1088,35 @@ evaluate_detailed(schemurai_evaluator_t *evaluator, VALUE node, VALUE instance)
             VALUE name = rb_ary_entry(names, i); evaluate_detailed_at(evaluator, node_child(node, "propertyNames", Qnil), name, name, key("propertyNames"), Qundef);
         }
         if (hash_has(schema, "dependencies")) {
-            VALUE dependencies = hash_get(schema, "dependencies"), dependency_names = rb_funcall(dependencies, rb_intern("keys"), 0);
+            VALUE dependencies = hash_get(schema, "dependencies"), dependency_names = rb_funcall(dependencies, id_keys, 0);
             for (i = 0; i < RARRAY_LEN(dependency_names); i++) {
                 VALUE name = rb_ary_entry(dependency_names, i), dependency;
-                if (!RTEST(rb_funcall(instance, rb_intern("key?"), 1, name))) continue;
+                if (!RTEST(rb_funcall(instance, id_key_p, 1, name))) continue;
                 dependency = rb_hash_aref(dependencies, name);
                 if (RB_TYPE_P(dependency, T_ARRAY)) for (j = 0; j < RARRAY_LEN(dependency); j++) {
                     VALUE needed = rb_ary_entry(dependency, j);
-                    if (!RTEST(rb_funcall(instance, rb_intern("key?"), 1, needed))) add_error(evaluator, "dependencies", rb_sprintf("property %"PRIsVALUE" is required by %"PRIsVALUE, rb_inspect(needed), rb_inspect(name)), true);
+                    if (!RTEST(rb_funcall(instance, id_key_p, 1, needed))) add_error(evaluator, "dependencies", rb_sprintf("property %"PRIsVALUE" is required by %"PRIsVALUE, rb_inspect(needed), rb_inspect(name)), true);
                 }
                 else evaluate_detailed_at(evaluator, node_child(node, "dependencies", name), instance, Qundef, key("dependencies"), name);
             }
         }
         if (hash_has(schema, "dependentRequired")) {
-            VALUE dependencies = hash_get(schema, "dependentRequired"), dependency_names = rb_funcall(dependencies, rb_intern("keys"), 0);
+            VALUE dependencies = hash_get(schema, "dependentRequired"), dependency_names = rb_funcall(dependencies, id_keys, 0);
             for (i = 0; i < RARRAY_LEN(dependency_names); i++) {
                 VALUE name = rb_ary_entry(dependency_names, i), dependency;
-                if (!RTEST(rb_funcall(instance, rb_intern("key?"), 1, name))) continue;
+                if (!RTEST(rb_funcall(instance, id_key_p, 1, name))) continue;
                 dependency = rb_hash_aref(dependencies, name);
                 for (j = 0; j < RARRAY_LEN(dependency); j++) {
                     VALUE needed = rb_ary_entry(dependency, j);
-                    if (!RTEST(rb_funcall(instance, rb_intern("key?"), 1, needed))) add_error(evaluator, "dependentRequired", rb_sprintf("property %"PRIsVALUE" is required by %"PRIsVALUE, rb_inspect(needed), rb_inspect(name)), true);
+                    if (!RTEST(rb_funcall(instance, id_key_p, 1, needed))) add_error(evaluator, "dependentRequired", rb_sprintf("property %"PRIsVALUE" is required by %"PRIsVALUE, rb_inspect(needed), rb_inspect(name)), true);
                 }
             }
         }
         if (hash_has(schema, "dependentSchemas")) {
-            VALUE dependencies = hash_get(schema, "dependentSchemas"), dependency_names = rb_funcall(dependencies, rb_intern("keys"), 0);
+            VALUE dependencies = hash_get(schema, "dependentSchemas"), dependency_names = rb_funcall(dependencies, id_keys, 0);
             for (i = 0; i < RARRAY_LEN(dependency_names); i++) {
                 VALUE name = rb_ary_entry(dependency_names, i);
-                if (RTEST(rb_funcall(instance, rb_intern("key?"), 1, name))) evaluate_detailed_at(evaluator, node_child(node, "dependentSchemas", name), instance, Qundef, key("dependentSchemas"), name);
+                if (RTEST(rb_funcall(instance, id_key_p, 1, name))) evaluate_detailed_at(evaluator, node_child(node, "dependentSchemas", name), instance, Qundef, key("dependentSchemas"), name);
             }
         }
     }
@@ -1083,7 +1130,7 @@ evaluate_detailed(schemurai_evaluator_t *evaluator, VALUE node, VALUE instance)
     }
     if (rb_obj_is_kind_of(instance, rb_cHash) && hash_has(schema, "unevaluatedProperties")) {
         evaluation_t prior = evaluate_tracking_mode(evaluator, node, instance, false);
-        VALUE child = node_child(node, "unevaluatedProperties", Qnil), names = rb_funcall(instance, rb_intern("keys"), 0);
+        VALUE child = node_child(node, "unevaluatedProperties", Qnil), names = rb_funcall(instance, id_keys, 0);
         for (i = 0; i < RARRAY_LEN(names); i++) {
             VALUE name = rb_ary_entry(names, i);
             if (!array_includes(prior.properties, name)) evaluate_detailed_at(evaluator, child, rb_hash_aref(instance, name), name, key("unevaluatedProperties"), Qundef);
@@ -1158,7 +1205,7 @@ evaluator_initialize(int argc, VALUE *argv, VALUE self)
 {
     VALUE graph, root, options;
     schemurai_evaluator_t *evaluator;
-    ID keywords[] = {rb_intern("content"), rb_intern("format")};
+    ID keywords[] = {id_content, id_format};
     VALUE values[2] = {Qfalse, Qfalse};
     rb_scan_args(argc, argv, "2:", &graph, &root, &options);
     if (!NIL_P(options)) rb_get_kwargs(options, keywords, 0, 2, values);
@@ -1198,33 +1245,65 @@ evaluator_validate(VALUE self, VALUE instance)
     return rb_class_new_instance(1, arguments, cResult);
 }
 
+static void
+initialize_cached_strings(void)
+{
+    size_t i;
+    cached_strings = st_init_strtable();
+    cached_string_roots = rb_ary_new_capa((long)(sizeof(cached_string_specs) / sizeof(cached_string_specs[0])));
+    for (i = 0; i < sizeof(cached_string_specs) / sizeof(cached_string_specs[0]); i++) {
+        const cached_string_spec_t *spec = &cached_string_specs[i];
+        VALUE string = rb_str_new_static(spec->bytes, spec->length);
+        rb_obj_freeze(string);
+        rb_ary_push(cached_string_roots, string);
+        st_insert(cached_strings, (st_data_t)spec->bytes, (st_data_t)string);
+    }
+    rb_obj_freeze(cached_string_roots);
+    rb_global_variable(&cached_string_roots);
+}
+
 void
 Init_schemurai_native(void)
 {
     rb_ext_ractor_safe(true);
+    id_schema = rb_intern_const("schema"); id_child = rb_intern_const("child"); id_resolve = rb_intern_const("resolve");
+    id_dialect = rb_intern_const("dialect"); id_resource = rb_intern_const("resource"); id_root = rb_intern_const("root");
+    id_keyword_mask = rb_intern_const("keyword_mask"); id_dynamic_scope_p = rb_intern_const("dynamic_scope?"); id_dynamic_anchor = rb_intern_const("dynamic_anchor");
+    id_ref_siblings_p = rb_intern_const("ref_siblings?"); id_format_assertion_p = rb_intern_const("format_assertion?");
+    id_format = rb_intern_const("format"); id_call = rb_intern_const("call"); id_keywords = rb_intern_const("keywords");
+    id_finite_p = rb_intern_const("finite?"); id_to_i = rb_intern_const("to_i"); id_remainder = rb_intern_const("remainder");
+    id_zero_p = rb_intern_const("zero?"); id_positive_p = rb_intern_const("positive?"); id_match_p = rb_intern_const("match?");
+    id_length = rb_intern_const("length"); id_object_id = rb_intern_const("object_id");
+    id_key_p = rb_intern_const("key?"); id_keys = rb_intern_const("keys"); id_rational = rb_intern_const("Rational");
+    id_to_s = rb_intern_const("to_s"); id_compare = rb_intern_const("<=>"); id_include_p = rb_intern_const("include?");
+    id_gsub = rb_intern_const("gsub"); id_new = rb_intern_const("new"); id_message = rb_intern_const("message");
+    id_end_with_p = rb_intern_const("end_with?"); id_split = rb_intern_const("split");
+    id_strict_decode64 = rb_intern_const("strict_decode64"); id_parse = rb_intern_const("parse");
+    id_each = rb_intern_const("each"); id_name = rb_intern_const("name"); id_content = rb_intern_const("content");
+    id_resolution_error = rb_intern_const("ResolutionError"); id_base64 = rb_intern_const("Base64");
+    id_json = rb_intern_const("JSON"); id_parser_error = rb_intern_const("ParserError");
+    id_validation_error = rb_intern_const("ValidationError"); id_result = rb_intern_const("Result");
+    id_regexp_error = rb_intern_const("RegexpError");
+    sym_number = ID2SYM(rb_intern_const("number")); sym_boolean = ID2SYM(rb_intern_const("boolean"));
+    sym_native = ID2SYM(rb_intern_const("native")); sym_keyword = ID2SYM(rb_intern_const("keyword"));
+    sym_instance_path = ID2SYM(rb_intern_const("instance_path")); sym_schema_path = ID2SYM(rb_intern_const("schema_path"));
+    sym_message = ID2SYM(id_message);
+    initialize_cached_strings();
     VALUE schemurai = rb_define_module("Schemurai");
     mNative = rb_define_module_under(schemurai, "Native");
     cEvaluator = rb_define_class_under(mNative, "Evaluator", rb_cObject);
-    rb_define_const(mNative, "BACKEND", ID2SYM(rb_intern("native")));
+    rb_define_const(mNative, "BACKEND", sym_native);
     rb_define_alloc_func(cEvaluator, evaluator_allocate);
     rb_define_method(cEvaluator, "initialize", evaluator_initialize, -1);
     rb_define_method(cEvaluator, "valid?", evaluator_valid, 1);
     rb_define_method(cEvaluator, "validate", evaluator_validate, 1);
-    id_schema = rb_intern("schema"); id_child = rb_intern("child"); id_resolve = rb_intern("resolve");
-    id_dialect = rb_intern("dialect"); id_resource = rb_intern("resource"); id_root = rb_intern("root");
-    id_keyword_mask = rb_intern("keyword_mask"); id_dynamic_scope_p = rb_intern("dynamic_scope?"); id_dynamic_anchor = rb_intern("dynamic_anchor");
-    id_ref_siblings_p = rb_intern("ref_siblings?"); id_format_assertion_p = rb_intern("format_assertion?");
-    id_format = rb_intern("format"); id_call = rb_intern("call"); id_keywords = rb_intern("keywords");
-    id_finite_p = rb_intern("finite?"); id_to_i = rb_intern("to_i"); id_remainder = rb_intern("remainder");
-    id_zero_p = rb_intern("zero?"); id_positive_p = rb_intern("positive?"); id_match_p = rb_intern("match?");
-    id_length = rb_intern("length"); id_object_id = rb_intern("object_id");
-    cResolutionError = rb_const_get(schemurai, rb_intern("ResolutionError"));
-    mBase64 = rb_const_get(rb_cObject, rb_intern("Base64"));
-    mJSON = rb_const_get(rb_cObject, rb_intern("JSON"));
-    cJSONParserError = rb_const_get(mJSON, rb_intern("ParserError"));
-    cValidationError = rb_const_get(schemurai, rb_intern("ValidationError"));
-    cResult = rb_const_get(schemurai, rb_intern("Result"));
-    cRegexpError = rb_const_get(rb_cObject, rb_intern("RegexpError"));
+    cResolutionError = rb_const_get(schemurai, id_resolution_error);
+    mBase64 = rb_const_get(rb_cObject, id_base64);
+    mJSON = rb_const_get(rb_cObject, id_json);
+    cJSONParserError = rb_const_get(mJSON, id_parser_error);
+    cValidationError = rb_const_get(schemurai, id_validation_error);
+    cResult = rb_const_get(schemurai, id_result);
+    cRegexpError = rb_const_get(rb_cObject, id_regexp_error);
     rb_global_variable(&mNative);
     rb_global_variable(&cEvaluator);
     rb_global_variable(&cResolutionError);
