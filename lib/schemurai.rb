@@ -34,10 +34,13 @@ module Schemurai
     end
   end
 
-  # Describes one failed JSON Schema assertion.
+  # Public value type describing one failed JSON Schema assertion.
   #
-  # +instance_path+ and +schema_path+ are JSON Pointers. An empty string points
-  # to the root instance or schema.
+  # +keyword+ identifies the failed keyword. +instance_path+ and +schema_path+
+  # are JSON Pointers; an empty string points to the root instance or schema.
+  # +message+ is a human-readable String. Its presence and type are public API,
+  # but its exact wording is not. Use +keyword+ and the paths for programmatic
+  # error handling.
   class ValidationError < Data.define(:keyword, :instance_path, :schema_path, :message)
     # Returns the error fields as a Hash.
     def to_h

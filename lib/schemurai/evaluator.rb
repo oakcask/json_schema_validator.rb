@@ -3,6 +3,7 @@
 require "json"
 require "base64"
 require_relative "evaluation"
+require_relative "error_message"
 
 module Schemurai
   module Internal
@@ -333,7 +334,7 @@ module Schemurai
         schema = node.schema
         return Evaluation.valid if schema == true
         if schema == false
-          add_error("falseSchema", "boolean schema is false", append_keyword: false)
+          add_error("falseSchema", append_keyword: false) { ErrorMessage.false_schema }
           return Evaluation.invalid
         end
         return Evaluation.valid unless schema.is_a?(Hash)
@@ -442,15 +443,15 @@ module Schemurai
         types = Array(schema["type"])
         return if types.any? { |type| type?(value, type) }
 
-        add_error("type", "expected #{types.join(" or ")}")
+        add_error("type") { ErrorMessage.type(types, value) }
       end
 
       private def check_enum(schema, value)
         if schema.key?("enum") && !schema["enum"].any? { |candidate| json_equal?(candidate, value) }
-          add_error("enum", "value is not in enum")
+          add_error("enum") { ErrorMessage.enum }
         end
         if schema.key?("const") && !json_equal?(schema["const"], value)
-          add_error("const", "value does not equal const")
+          add_error("const") { ErrorMessage.const }
         end
       end
 
@@ -472,7 +473,7 @@ module Schemurai
             matches << result if result.valid?
           end
           if matches.empty?
-            add_error("anyOf", "no subschema matched")
+            add_error("anyOf") { ErrorMessage.any_of }
           else
             matches.each { |result| evaluation = evaluation.merge(result) }
           end
@@ -487,12 +488,12 @@ module Schemurai
           if matches.length == 1
             evaluation = evaluation.merge(matches.first)
           else
-            add_error("oneOf", "expected exactly one match, got #{matches.length}")
+            add_error("oneOf") { ErrorMessage.one_of(matches.length) }
           end
         end
 
         if schema.key?("not") && trial_at(node.child("not"), value, MISSING_SEGMENT, "not").valid?
-          add_error("not", "subschema matched")
+          add_error("not") { ErrorMessage.not }
         end
 
         if schema.key?("if")
@@ -516,14 +517,14 @@ module Schemurai
 
         divisor = decimal(schema["multipleOf"])
         valid = divisor.positive? && decimal(value).remainder(divisor).zero?
-        add_error("multipleOf", "number is not a multiple") unless valid
+        add_error("multipleOf") { ErrorMessage.multiple_of(schema["multipleOf"]) } unless valid
       end
 
       private def compare(schema, keyword, value)
         return unless schema.key?(keyword)
         return if yield(decimal(value), decimal(schema[keyword]))
 
-        add_error(keyword, "numeric limit was exceeded")
+        add_error(keyword) { ErrorMessage.numeric_limit(keyword, schema[keyword]) }
       end
 
       private def check_string(node, value)
@@ -534,14 +535,14 @@ module Schemurai
 
         if schema.key?("pattern")
           matched = ecma_regexp(schema["pattern"]).match?(value)
-          add_error("pattern", "string does not match pattern") unless matched
+          add_error("pattern") { ErrorMessage.pattern(schema["pattern"]) } unless matched
         end
         if format_asserted?(node)
-          add_error("format", "string is not a valid #{node.format.name}") unless node.format.call(value)
+          add_error("format") { ErrorMessage.format(node.format.name) } unless node.format.call(value)
         end
         check_content(schema, value) if @validate_content
       rescue RegexpError
-        add_error("pattern", "invalid regular expression")
+        add_error("pattern") { ErrorMessage.invalid_pattern(schema["pattern"]) }
       end
 
       private def format_asserted?(node)
@@ -558,7 +559,7 @@ module Schemurai
           duplicate = value.each_with_index.any? do |item, index|
             value[0...index].any? { |previous| json_equal?(previous, item) }
           end
-          add_error("uniqueItems", "array items are not unique") if duplicate
+          add_error("uniqueItems") { ErrorMessage.unique_items } if duplicate
         end
 
         prefix_items = schema["prefixItems"]
@@ -600,7 +601,7 @@ module Schemurai
           minimum = schema.fetch("minContains", 1)
           maximum = schema.fetch("maxContains", Float::INFINITY)
           unless matched.length.between?(minimum, maximum)
-            add_error("contains", "matched #{matched.length} array items")
+            add_error("contains") { ErrorMessage.contains(matched.length, minimum, maximum) }
           end
           evaluated.concat(matched)
         end
@@ -623,7 +624,7 @@ module Schemurai
         limit(schema, "minProperties", value.length) { |actual, expected| actual >= expected }
 
         Array(schema["required"]).each do |name|
-          add_error("required", "required property #{name.inspect} is missing") unless value.key?(name)
+          add_error("required") { ErrorMessage.required(name) } unless value.key?(name)
         end
 
         properties = schema.fetch("properties", {})
@@ -657,7 +658,7 @@ module Schemurai
           next unless value.key?(name)
           if dependency.is_a?(Array)
             dependency.each do |required_name|
-              add_error("dependencies", "property #{required_name.inspect} is required by #{name.inspect}") unless value.key?(required_name)
+              add_error("dependencies") { ErrorMessage.dependent_required(name, required_name) } unless value.key?(required_name)
             end
           else
             result = evaluate_at(node.child("dependencies", name), value, MISSING_SEGMENT, "dependencies", name)
@@ -669,7 +670,7 @@ module Schemurai
           next unless value.key?(name)
           required_names.each do |required_name|
             unless value.key?(required_name)
-              add_error("dependentRequired", "property #{required_name.inspect} is required by #{name.inspect}")
+              add_error("dependentRequired") { ErrorMessage.dependent_required(name, required_name) }
             end
           end
         end
@@ -707,7 +708,7 @@ module Schemurai
         return unless schema.key?(keyword)
         return if yield(actual, schema[keyword])
 
-        add_error(keyword, "size limit was exceeded")
+        add_error(keyword) { ErrorMessage.size(keyword, schema[keyword], actual) }
       end
 
       private def type?(value, type)
@@ -803,10 +804,12 @@ module Schemurai
         JSON.parse(decoded)
       rescue ArgumentError, JSON::ParserError
         keyword = (schema["contentEncoding"] == "base64") ? "contentEncoding" : "contentMediaType"
-        add_error(keyword, "string content is invalid")
+        add_error(keyword) do
+          (keyword == "contentEncoding") ? ErrorMessage.content_encoding : ErrorMessage.content_media_type
+        end
       end
 
-      private def add_error(keyword, message, append_keyword: true)
+      private def add_error(keyword, message = nil, append_keyword: true)
         @error_count += 1
         if @error_callback
           schema_keyword = append_keyword ? keyword : MISSING_SEGMENT
@@ -815,7 +818,7 @@ module Schemurai
               keyword: keyword,
               instance_path: pointer(@instance_path),
               schema_path: pointer(@schema_path, schema_keyword),
-              message: message
+              message: message || yield
             )
           )
         end
