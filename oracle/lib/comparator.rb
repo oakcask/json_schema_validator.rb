@@ -46,7 +46,21 @@ module SchemuraiOracle
     end
 
     private def semantic_record(record)
-      record.except(*METADATA_KEYS)
+      semantic = record.except(*METADATA_KEYS)
+      errors = semantic.dig("result", "errors")
+      return semantic unless errors.is_a?(Array)
+
+      semantic.merge(
+        "result" => semantic.fetch("result").merge(
+          "errors" => errors.map { |error| normalize_validation_message(error) }
+        )
+      )
+    end
+
+    private def normalize_validation_message(error)
+      return error unless error.key?("message")
+
+      error.merge("message" => error.fetch("message").class.name)
     end
   end
 end

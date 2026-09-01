@@ -120,6 +120,38 @@ validation for `contentEncoding` and `contentMediaType` with `content: true`.
 Enable optional format assertions with `format: true`; support for each format is
 listed separately below.
 
+### Validation errors
+
+```ruby
+result = Schemurai.validate(
+  { "$ref" => "https://example.test/positive" },
+  -1,
+  schemas: { "https://example.test/positive" => { "type" => "integer", "minimum" => 1 } }
+)
+
+validation_error = result.errors[0]
+p validation_error.keyword # => "minimum"
+p validation_error.instance_path # => ""
+p validation_error.schema_path # => "/$ref/minimum"
+p validation_error.message # => "number must be greater than or equal to 1"
+```
+
+`Result#errors` contains `Schemurai::ValidationError` objects.
+Check the following attributes to investigate schema errors:
+
+- `keyword` identifies the failed JSON Schema keyword. Schemurai uses
+  `falseSchema` for a boolean `false` schema, which has no keyword of its own.
+- `instance_path` is a JSON Pointer to the value that failed validation.
+- `schema_path` is a JSON Pointer to the schema location that produced the
+  error.
+- `message` is a human-readable `String` describing the failure.
+
+An empty path points to the instance or schema root. Error order is stable.
+The presence and type of `message` are part of the public API, but its exact
+wording is not. Use `keyword`, `instance_path`, and `schema_path`, rather than
+matching `message`, when handling errors programmatically. `ValidationError#to_h`
+returns these four attributes as a Hash.
+
 ### Thread / Ractor support
 
 To share a registry between threads or Ractors, finish registering schemas and

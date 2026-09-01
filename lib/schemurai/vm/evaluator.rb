@@ -3,6 +3,7 @@
 require "base64"
 require "json"
 require_relative "../evaluation"
+require_relative "../error_message"
 require_relative "compiler"
 
 module Schemurai
@@ -132,7 +133,7 @@ module Schemurai
           case opcode
           when :boolean
             if operand == false
-              add_error("falseSchema", "boolean schema is false", append_keyword: false)
+              add_error("falseSchema", append_keyword: false) { Internal::ErrorMessage.false_schema }
               evaluation = Evaluation.invalid
             end
           when :ref
@@ -142,25 +143,25 @@ module Schemurai
           when :dynamic_ref
             evaluation = evaluation.merge(evaluate_dynamic_ref(program, operand, instance))
           when :type_null
-            check_compiled_type("null", instance.nil?)
+            check_compiled_type("null", instance.nil?, instance)
           when :type_boolean
-            check_compiled_type("boolean", instance == true || instance == false)
+            check_compiled_type("boolean", instance == true || instance == false, instance)
           when :type_object
-            check_compiled_type("object", instance.is_a?(Hash))
+            check_compiled_type("object", instance.is_a?(Hash), instance)
           when :type_array
-            check_compiled_type("array", instance.is_a?(Array))
+            check_compiled_type("array", instance.is_a?(Array), instance)
           when :type_number
-            check_compiled_type("number", number?(instance))
+            check_compiled_type("number", number?(instance), instance)
           when :type_integer
-            check_compiled_type("integer", integer?(instance))
+            check_compiled_type("integer", integer?(instance), instance)
           when :type_string
-            check_compiled_type("string", instance.is_a?(String))
+            check_compiled_type("string", instance.is_a?(String), instance)
           when :types
             check_compiled_types(operand, instance)
           when :enum
-            add_error("enum", "value is not in enum") unless operand.any? { |candidate| json_equal?(candidate, instance) }
+            add_error("enum") { Internal::ErrorMessage.enum } unless operand.any? { |candidate| json_equal?(candidate, instance) }
           when :const
-            add_error("const", "value does not equal const") unless json_equal?(operand, instance)
+            add_error("const") { Internal::ErrorMessage.const } unless json_equal?(operand, instance)
           when :allOf, :anyOf, :oneOf, :not, :conditional
             evaluation = evaluation.merge(check_combiner(opcode, operand, instance))
           when :number
@@ -271,15 +272,15 @@ module Schemurai
         active[program.node.object_id] ||= {}
       end
 
-      private def check_compiled_type(name, valid)
-        add_error("type", "expected #{name}") unless valid
+      private def check_compiled_type(name, valid, value)
+        add_error("type") { Internal::ErrorMessage.type(name, value) } unless valid
       end
 
       private def check_compiled_types(rules, value)
         instance_mask = instance_type_mask(value, integer: (rules.mask & TYPE_INTEGER) != 0)
         return unless (rules.mask & instance_mask).zero?
 
-        add_error("type", "expected #{rules.names.join(" or ")}")
+        add_error("type") { Internal::ErrorMessage.type(rules.names, value) }
       end
 
       private def instance_type_mask(value, integer:)
@@ -314,22 +315,26 @@ module Schemurai
         mask = rules.mask
         actual = decimal(value)
         if (mask & MAXIMUM) != 0 && actual > rules.maximum
-          add_error("maximum", "numeric limit was exceeded")
+          add_error("maximum") { Internal::ErrorMessage.numeric_limit("maximum", rules.maximum) }
         end
         if (mask & MINIMUM) != 0 && actual < rules.minimum
-          add_error("minimum", "numeric limit was exceeded")
+          add_error("minimum") { Internal::ErrorMessage.numeric_limit("minimum", rules.minimum) }
         end
         if (mask & EXCLUSIVE_MAXIMUM) != 0 && actual >= rules.exclusive_maximum
-          add_error("exclusiveMaximum", "numeric limit was exceeded")
+          add_error("exclusiveMaximum") do
+            Internal::ErrorMessage.numeric_limit("exclusiveMaximum", rules.exclusive_maximum)
+          end
         end
         if (mask & EXCLUSIVE_MINIMUM) != 0 && actual <= rules.exclusive_minimum
-          add_error("exclusiveMinimum", "numeric limit was exceeded")
+          add_error("exclusiveMinimum") do
+            Internal::ErrorMessage.numeric_limit("exclusiveMinimum", rules.exclusive_minimum)
+          end
         end
         return if (mask & MULTIPLE_OF).zero?
 
         divisor = rules.multiple_of
         valid = divisor.positive? && actual.remainder(divisor).zero?
-        add_error("multipleOf", "number is not a multiple") unless valid
+        add_error("multipleOf") { Internal::ErrorMessage.multiple_of(divisor) } unless valid
       end
 
       private def valid_string?(rules, value)
@@ -350,20 +355,20 @@ module Schemurai
       private def check_string(rules, value)
         length = value.length
         if rules.has_max_length && length > rules.max_length
-          add_error("maxLength", "size limit was exceeded")
+          add_error("maxLength") { Internal::ErrorMessage.size("maxLength", rules.max_length, length) }
         end
         if rules.has_min_length && length < rules.min_length
-          add_error("minLength", "size limit was exceeded")
+          add_error("minLength") { Internal::ErrorMessage.size("minLength", rules.min_length, length) }
         end
         if rules.has_pattern && !ecma_regexp(rules.pattern).match?(value)
-          add_error("pattern", "string does not match pattern")
+          add_error("pattern") { Internal::ErrorMessage.pattern(rules.pattern) }
         end
         if format_asserted?(rules) && !rules.format.call(value)
-          add_error("format", "string is not a valid #{rules.format.name}")
+          add_error("format") { Internal::ErrorMessage.format(rules.format.name) }
         end
         check_content(rules, value) if @validate_content
       rescue RegexpError
-        add_error("pattern", "invalid regular expression")
+        add_error("pattern") { Internal::ErrorMessage.invalid_pattern(rules.pattern) }
       end
 
       private def format_asserted?(rules)
@@ -385,7 +390,9 @@ module Schemurai
         JSON.parse(decoded)
       rescue ArgumentError, JSON::ParserError
         keyword = rules.decode_base64 ? "contentEncoding" : "contentMediaType"
-        add_error(keyword, "string content is invalid")
+        add_error(keyword) do
+          (keyword == "contentEncoding") ? Internal::ErrorMessage.content_encoding : Internal::ErrorMessage.content_media_type
+        end
       end
 
       private def valid_array?(rules, value)
@@ -437,16 +444,16 @@ module Schemurai
       private def check_array(rules, value, prior_evaluation)
         evaluated = []
         if rules.has_max_items && value.length > rules.max_items
-          add_error("maxItems", "size limit was exceeded")
+          add_error("maxItems") { Internal::ErrorMessage.size("maxItems", rules.max_items, value.length) }
         end
         if rules.has_min_items && value.length < rules.min_items
-          add_error("minItems", "size limit was exceeded")
+          add_error("minItems") { Internal::ErrorMessage.size("minItems", rules.min_items, value.length) }
         end
         if rules.unique
           duplicate = value.each_with_index.any? do |item, index|
             value[0...index].any? { |previous| json_equal?(previous, item) }
           end
-          add_error("uniqueItems", "array items are not unique") if duplicate
+          add_error("uniqueItems") { Internal::ErrorMessage.unique_items } if duplicate
         end
 
         if (prefix_items = rules.prefix_items)
@@ -483,7 +490,9 @@ module Schemurai
             trial_at(contains, value[index], index, "contains").valid?
           end
           unless matched.length.between?(rules.min_contains, rules.max_contains)
-            add_error("contains", "matched #{matched.length} array items")
+            add_error("contains") do
+              Internal::ErrorMessage.contains(matched.length, rules.min_contains, rules.max_contains)
+            end
           end
           evaluated.concat(matched)
         end
@@ -548,14 +557,18 @@ module Schemurai
       private def check_object(rules, value, prior_evaluation)
         evaluated = []
         if rules.has_max_properties && value.length > rules.max_properties
-          add_error("maxProperties", "size limit was exceeded")
+          add_error("maxProperties") do
+            Internal::ErrorMessage.size("maxProperties", rules.max_properties, value.length)
+          end
         end
         if rules.has_min_properties && value.length < rules.min_properties
-          add_error("minProperties", "size limit was exceeded")
+          add_error("minProperties") do
+            Internal::ErrorMessage.size("minProperties", rules.min_properties, value.length)
+          end
         end
         if (required = rules.required)
           required.each do |name|
-            add_error("required", "required property #{name.inspect} is missing") unless value.key?(name)
+            add_error("required") { Internal::ErrorMessage.required(name) } unless value.key?(name)
           end
         end
 
@@ -588,7 +601,7 @@ module Schemurai
           if dependency.is_a?(Array)
             dependency.each do |required_name|
               unless value.key?(required_name)
-                add_error("dependencies", "property #{required_name.inspect} is required by #{name.inspect}")
+                add_error("dependencies") { Internal::ErrorMessage.dependent_required(name, required_name) }
               end
             end
           else
@@ -600,7 +613,7 @@ module Schemurai
           next unless value.key?(name)
           required_names.each do |required_name|
             unless value.key?(required_name)
-              add_error("dependentRequired", "property #{required_name.inspect} is required by #{name.inspect}")
+              add_error("dependentRequired") { Internal::ErrorMessage.dependent_required(name, required_name) }
             end
           end
         end
@@ -633,7 +646,7 @@ module Schemurai
             result if result.valid?
           end
           if matches.empty?
-            add_error("anyOf", "no subschema matched")
+            add_error("anyOf") { Internal::ErrorMessage.any_of }
           else
             matches.each { |result| evaluation = evaluation.merge(result) }
           end
@@ -645,10 +658,10 @@ module Schemurai
           if matches.length == 1
             evaluation = evaluation.merge(matches.first)
           else
-            add_error("oneOf", "expected exactly one match, got #{matches.length}")
+            add_error("oneOf") { Internal::ErrorMessage.one_of(matches.length) }
           end
         when :not
-          add_error("not", "subschema matched") if trial_at(operand, value, MISSING_SEGMENT, "not").valid?
+          add_error("not") { Internal::ErrorMessage.not } if trial_at(operand, value, MISSING_SEGMENT, "not").valid?
         when :conditional
           condition = trial_at(operand.condition, value, MISSING_SEGMENT, "if")
           evaluation = evaluation.merge(condition) if condition.valid?
@@ -694,7 +707,7 @@ module Schemurai
         @instance_path.pop unless instance_segment.equal?(MISSING_SEGMENT)
       end
 
-      private def add_error(keyword, message, append_keyword: true)
+      private def add_error(keyword, message = nil, append_keyword: true)
         @error_count += 1
         return false unless @errors
 
@@ -703,7 +716,7 @@ module Schemurai
           keyword: keyword,
           instance_path: pointer(@instance_path),
           schema_path: pointer(@schema_path, final_segment),
-          message: message
+          message: message || yield
         )
         false
       end

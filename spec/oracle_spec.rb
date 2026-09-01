@@ -22,7 +22,7 @@ RSpec.describe "the Ruby oracle" do
     expect(comparator.compare(expected, actual)).to be_empty
   end
 
-  it "emits canonical records without sorting detailed errors", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
+  it "emits the public ValidationError fields without sorting errors", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
     runner = SchemuraiOracle::Runner.new(backend: :ruby)
     record = runner.run(
       "id" => "errors",
@@ -32,8 +32,9 @@ RSpec.describe "the Ruby oracle" do
     )
 
     expect(record).to include("backend" => "ruby", "outcome" => "success")
-    expect(record.fetch("result").fetch("errors").map { |error| error.fetch("message") })
-      .to eq(["required property \"first\" is missing", "required property \"second\" is missing"])
+    errors = record.fetch("result").fetch("errors")
+    expect(errors.map { |error| error.fetch("keyword") }).to eq(%w[required required])
+    expect(errors).to all(include("instance_path" => "", "schema_path" => "/required", "message" => be_a(String)))
   end
 
   it "compares behavior while retaining backend diagnostics" do
@@ -57,5 +58,19 @@ RSpec.describe "the Ruby oracle" do
 
     comparator = SchemuraiOracle::Comparator.new(expected_backend: nil, actual_backend: nil)
     expect(comparator.compare(expected, actual)).not_to be_empty
+  end
+
+  it "does not treat validation message wording as compatible behavior" do
+    expected = [{"case_id" => "one", "operation" => "validate", "result" => {"errors" => [{"message" => "first"}]}}]
+    actual = [{"case_id" => "one", "operation" => "validate", "result" => {"errors" => [{"message" => "second"}]}}]
+
+    expect(SchemuraiOracle::Comparator.new(expected_backend: nil, actual_backend: nil).compare(expected, actual)).to be_empty
+  end
+
+  it "retains validation message presence and type as compatible behavior" do
+    expected = [{"case_id" => "one", "operation" => "validate", "result" => {"errors" => [{"message" => "text"}]}}]
+    actual = [{"case_id" => "one", "operation" => "validate", "result" => {"errors" => [{"message" => nil}]}}]
+
+    expect(SchemuraiOracle::Comparator.new(expected_backend: nil, actual_backend: nil).compare(expected, actual)).not_to be_empty
   end
 end

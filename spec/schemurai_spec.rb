@@ -64,7 +64,7 @@ RSpec.describe Schemurai do
       keyword: "anyOf",
       instance_path: "",
       schema_path: "/anyOf",
-      message: "no subschema matched"
+      message: "value must match at least one subschema"
     )
   end
 

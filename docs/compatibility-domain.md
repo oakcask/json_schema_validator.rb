@@ -38,9 +38,13 @@ arbitrary Ruby objects, monkey patches, or refinements is promised.
 
 ## Observable results
 
-Compatibility includes the `valid?` boolean, detailed error keyword, instance
-path, schema path, message, and error order. It also includes the class and
-message of exceptions named by compatibility fixtures, registry state and
-mutation rejection, and validator use from threads and Ractors. The oracle
-runner preserves error order and records backend identity so comparison cannot
-hide a Ruby fallback.
+Compatibility includes the `valid?` boolean, `Schemurai::ValidationError`
+class, detailed error keyword, instance path, schema path, error order, and the
+presence of a String message. Exact validation message wording is not part of
+the compatibility contract. Programmatic consumers must use the keyword and
+paths instead. Compatibility also includes the class and message of exceptions
+named by compatibility fixtures, registry state and mutation rejection, and
+validator use from threads and Ractors. The oracle runner preserves error order
+and records backend identity so comparison cannot hide a Ruby fallback; the
+comparator normalizes validation message text while retaining its presence and
+type.
