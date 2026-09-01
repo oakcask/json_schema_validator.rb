@@ -13,8 +13,46 @@ module Schemurai
           "$dynamicAnchor" => "meta",
           "type" => ["object", "boolean"],
           "properties" => {
+            "$id" => {"type" => "string"},
+            "$schema" => {"type" => "string"},
+            "$ref" => {"type" => "string"},
+            "$anchor" => {"type" => "string", "pattern" => "^[A-Za-z_][-A-Za-z0-9._]*$"},
+            "$dynamicRef" => {"type" => "string"},
+            "$dynamicAnchor" => {"type" => "string", "pattern" => "^[A-Za-z_][-A-Za-z0-9._]*$"},
+            "$recursiveRef" => {"type" => "string"},
+            "$recursiveAnchor" => {"type" => "string", "pattern" => "^[A-Za-z_][-A-Za-z0-9._]*$"},
+            "$vocabulary" => {"type" => "object", "additionalProperties" => {"type" => "boolean"}},
+            "$comment" => {"type" => "string"},
             "$defs" => {"type" => "object", "additionalProperties" => {"$dynamicRef" => "#meta"}},
             "definitions" => {"type" => "object", "additionalProperties" => {"$dynamicRef" => "#meta"}},
+            "prefixItems" => {
+              "type" => "array",
+              "minItems" => 1,
+              "items" => {"$dynamicRef" => "#meta"}
+            },
+            "items" => {"$dynamicRef" => "#meta"},
+            "contains" => {"$dynamicRef" => "#meta"},
+            "additionalProperties" => {"$dynamicRef" => "#meta"},
+            "properties" => {"type" => "object", "additionalProperties" => {"$dynamicRef" => "#meta"}},
+            "patternProperties" => {"type" => "object", "additionalProperties" => {"$dynamicRef" => "#meta"}},
+            "dependentSchemas" => {"type" => "object", "additionalProperties" => {"$dynamicRef" => "#meta"}},
+            "dependencies" => {
+              "type" => "object",
+              "additionalProperties" => {
+                "anyOf" => [
+                  {"$dynamicRef" => "#meta"},
+                  {"type" => "array", "items" => {"type" => "string"}, "uniqueItems" => true}
+                ]
+              }
+            },
+            "propertyNames" => {"$dynamicRef" => "#meta"},
+            "if" => {"$dynamicRef" => "#meta"},
+            "then" => {"$dynamicRef" => "#meta"},
+            "else" => {"$dynamicRef" => "#meta"},
+            "allOf" => {"type" => "array", "minItems" => 1, "items" => {"$dynamicRef" => "#meta"}},
+            "anyOf" => {"type" => "array", "minItems" => 1, "items" => {"$dynamicRef" => "#meta"}},
+            "oneOf" => {"type" => "array", "minItems" => 1, "items" => {"$dynamicRef" => "#meta"}},
+            "not" => {"$dynamicRef" => "#meta"},
             "type" => {
               "anyOf" => [
                 {"enum" => ["null", "boolean", "object", "array", "number", "integer", "string"]},
@@ -26,20 +64,83 @@ module Schemurai
                 }
               ]
             },
+            "enum" => {"type" => "array"},
+            "multipleOf" => {"type" => "number", "exclusiveMinimum" => 0},
+            "maximum" => {"type" => "number"},
+            "exclusiveMaximum" => {"type" => "number"},
+            "minimum" => {"type" => "number"},
+            "exclusiveMinimum" => {"type" => "number"},
             "minLength" => {"type" => "integer", "minimum" => 0},
             "maxLength" => {"type" => "integer", "minimum" => 0},
+            "pattern" => {"type" => "string"},
             "minItems" => {"type" => "integer", "minimum" => 0},
             "maxItems" => {"type" => "integer", "minimum" => 0},
+            "uniqueItems" => {"type" => "boolean"},
             "minContains" => {"type" => "integer", "minimum" => 0},
             "maxContains" => {"type" => "integer", "minimum" => 0},
             "minProperties" => {"type" => "integer", "minimum" => 0},
-            "maxProperties" => {"type" => "integer", "minimum" => 0}
+            "maxProperties" => {"type" => "integer", "minimum" => 0},
+            "required" => {
+              "type" => "array",
+              "items" => {"type" => "string"},
+              "uniqueItems" => true
+            },
+            "dependentRequired" => {
+              "type" => "object",
+              "additionalProperties" => {
+                "type" => "array",
+                "items" => {"type" => "string"},
+                "uniqueItems" => true
+              }
+            },
+            "title" => {"type" => "string"},
+            "description" => {"type" => "string"},
+            "deprecated" => {"type" => "boolean"},
+            "readOnly" => {"type" => "boolean"},
+            "writeOnly" => {"type" => "boolean"},
+            "examples" => {"type" => "array"},
+            "format" => {"type" => "string"},
+            "contentEncoding" => {"type" => "string"},
+            "contentMediaType" => {"type" => "string"},
+            "contentSchema" => {"$dynamicRef" => "#meta"}
           }
         }.freeze
 
         MetaSchemas.register(META_SCHEMA_URI, SCHEMA)
 
-        private_constant :META_SCHEMA_URI, :SCHEMA
+        COMPONENT_KEYWORDS = {
+          "core" => %w[
+            $id $schema $ref $anchor $dynamicRef $dynamicAnchor $vocabulary $comment $defs
+          ],
+          "applicator" => %w[
+            prefixItems items contains additionalProperties properties patternProperties
+            dependentSchemas propertyNames if then else allOf anyOf oneOf not
+          ],
+          "unevaluated" => %w[unevaluatedItems unevaluatedProperties],
+          "validation" => %w[
+            type const enum multipleOf maximum exclusiveMaximum minimum exclusiveMinimum
+            maxLength minLength pattern maxItems minItems uniqueItems maxContains minContains
+            maxProperties minProperties required dependentRequired
+          ],
+          "meta-data" => %w[title description default deprecated readOnly writeOnly examples],
+          "format-annotation" => %w[format],
+          "format-assertion" => %w[format],
+          "content" => %w[contentEncoding contentMediaType contentSchema]
+        }.freeze
+
+        COMPONENT_KEYWORDS.each do |name, keywords|
+          uri = "https://json-schema.org/draft/2020-12/meta/#{name}"
+          component = {
+            "$schema" => META_SCHEMA_URI,
+            "$id" => uri,
+            "$dynamicAnchor" => "meta",
+            "type" => ["object", "boolean"],
+            "properties" => SCHEMA.fetch("properties").slice(*keywords)
+          }.freeze
+          MetaSchemas.register(uri, component)
+        end
+
+        private_constant :META_SCHEMA_URI, :SCHEMA, :COMPONENT_KEYWORDS
       end
     end
   end

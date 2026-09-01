@@ -17,6 +17,23 @@ module Schemurai
   # Raised when a schema requires a format assertion Schemurai does not support.
   class UnsupportedFormatError < Error; end
 
+  # Raised when a schema does not conform to its declared meta-schema.
+  class InvalidSchemaError < Error
+    # The detailed meta-schema validation result.
+    attr_reader :result
+
+    def initialize(result)
+      @result = result
+      first_error = result.errors.first
+      message = if first_error
+        "invalid schema at #{first_error.instance_path.inspect}: #{first_error.message}"
+      else
+        "invalid schema"
+      end
+      super(message)
+    end
+  end
+
   # Describes one failed JSON Schema assertion.
   #
   # +instance_path+ and +schema_path+ are JSON Pointers. An empty string points
@@ -57,12 +74,20 @@ module Schemurai
 
     # Creates a registry.
     #
-    # +schemas+ maps absolute URI strings to JSON-shaped Ruby schemas. +backend+
-    # accepts +:ruby+, +:vm+, or +:default+.
-    def initialize(schemas: {}, backend: Backend.requested)
+    # +schemas+ maps absolute URI strings to JSON-shaped Ruby schemas. Pass
+    # +validate_schema: true+ to validate every registered and compiled schema
+    # against its meta-schema. +backend+ accepts +:ruby+, +:vm+, or +:default+.
+    def initialize(schemas: {}, validate_schema: false, backend: Backend.requested)
       @backend = Backend.resolve(backend)
+      @validate_schema = validate_schema
       @graph = Internal::SchemaGraph.new(schemas: schemas)
       @compiler = VM::Compiler.new(@graph) if @backend == :vm
+      schemas.each_value { |schema| validate_schema!(schema) } if validate_schema?
+    end
+
+    # Returns whether this registry validates every schema against its meta-schema.
+    def validate_schema?
+      @validate_schema
     end
 
     # Compiles +schema+ and returns a Validator.
@@ -72,8 +97,23 @@ module Schemurai
     def compile(schema, base_uri: nil, content: false, format: false)
       raise Error, "cannot compile schemas after the registry is made shareable" if shareable?
 
+      validate_schema!(schema) if validate_schema?
       root = @graph.compile(schema, base_uri: base_uri)
       build_validator(root, content: content, format: format)
+    end
+
+    # Validates +schema+ against its declared meta-schema and returns a Result.
+    # Schemas without +$schema+ are validated as Draft 7.
+    def validate_schema(schema)
+      raise Error, "cannot validate schemas after the registry is made shareable" if shareable?
+
+      root = @graph.meta_schema_root(schema)
+      build_validator(root, content: false, format: false).validate(schema)
+    end
+
+    # Returns whether +schema+ conforms to its declared meta-schema.
+    def valid_schema?(schema)
+      validate_schema(schema).valid?
     end
 
     # Resolves and freezes registered schemas, then makes the registry Ractor-shareable.
@@ -112,6 +152,11 @@ module Schemurai
         Internal::Evaluator.new(@graph, root, content: content, format: format)
       end
       Validator.new(evaluator)
+    end
+
+    private def validate_schema!(schema)
+      result = validate_schema(schema)
+      raise InvalidSchemaError, result unless result.valid?
     end
   end
 
@@ -155,8 +200,8 @@ module Schemurai
   # +schemas+ maps external URI strings to schemas. +base_uri+ supplies the
   # schema's base URI. Optional content and format assertions are disabled by
   # default. +backend+ accepts +:ruby+, +:vm+, or +:default+.
-  module_function def compile(schema, schemas: {}, base_uri: nil, content: false, format: false, backend: Backend.requested)
-    SchemaRegistry.new(schemas: schemas, backend: backend).compile(
+  module_function def compile(schema, schemas: {}, base_uri: nil, content: false, format: false, validate_schema: false, backend: Backend.requested)
+    SchemaRegistry.new(schemas: schemas, validate_schema: validate_schema, backend: backend).compile(
       schema,
       base_uri: base_uri,
       content: content,
@@ -164,17 +209,29 @@ module Schemurai
     )
   end
 
+  # Validates +schema+ against its declared meta-schema and returns a Result.
+  # Schemas without +$schema+ are validated as Draft 7.
+  module_function def validate_schema(schema, schemas: {}, backend: Backend.requested)
+    SchemaRegistry.new(schemas: schemas, backend: backend).validate_schema(schema)
+  end
+
+  # Returns whether +schema+ conforms to its declared meta-schema.
+  module_function def valid_schema?(schema, schemas: {}, backend: Backend.requested)
+    validate_schema(schema, schemas: schemas, backend: backend).valid?
+  end
+
   # Validates +instance+ against +schema+ and returns a Result.
   #
   # This convenience method compiles the schema for each call. Use .compile
   # when validating multiple instances against the same schema.
-  module_function def validate(schema, instance, schemas: {}, base_uri: nil, content: false, format: false, backend: Backend.requested)
+  module_function def validate(schema, instance, schemas: {}, base_uri: nil, content: false, format: false, validate_schema: false, backend: Backend.requested)
     compile(
       schema,
       schemas: schemas,
       base_uri: base_uri,
       content: content,
       format: format,
+      validate_schema: validate_schema,
       backend: backend
     ).validate(instance)
   end
@@ -183,13 +240,14 @@ module Schemurai
   #
   # This convenience method compiles the schema for each call. Use .compile
   # when validating multiple instances against the same schema.
-  module_function def valid?(schema, instance, schemas: {}, base_uri: nil, content: false, format: false, backend: Backend.requested)
+  module_function def valid?(schema, instance, schemas: {}, base_uri: nil, content: false, format: false, validate_schema: false, backend: Backend.requested)
     compile(
       schema,
       schemas: schemas,
       base_uri: base_uri,
       content: content,
       format: format,
+      validate_schema: validate_schema,
       backend: backend
     ).valid?(instance)
   end

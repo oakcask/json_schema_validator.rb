@@ -30,6 +30,7 @@ module Schemurai
         @error_callback = nil
         @error_count = 0
         @track_dynamic_scope = @graph.dynamic_scope?
+        @dynamic_scope = nil
         @instance_path = nil
         @schema_path = nil
         evaluate_valid(@root, instance)
@@ -39,6 +40,7 @@ module Schemurai
         @error_callback = callback
         @error_count = 0
         @track_dynamic_scope = @graph.dynamic_scope?
+        @dynamic_scope = nil
         @instance_path = []
         @schema_path = []
         evaluate(@root, instance)
@@ -413,7 +415,7 @@ module Schemurai
         target = @graph.resolve(node, reference)
         return target unless reference.to_s.end_with?("#") && target.schema.is_a?(Hash) && target.schema["$recursiveAnchor"] == true
 
-        @dynamic_scope.filter_map { |resource| resource.root if resource.root.schema.is_a?(Hash) && resource.root.schema["$recursiveAnchor"] == true }.first || target
+        Array(@dynamic_scope).filter_map { |resource| resource.root if resource.root.schema.is_a?(Hash) && resource.root.schema["$recursiveAnchor"] == true }.first || target
       end
 
       private def dynamic_target(node, reference)
@@ -422,7 +424,7 @@ module Schemurai
         return target if raw_fragment.nil? || raw_fragment.empty? || raw_fragment.start_with?("/")
         return target unless target.schema.is_a?(Hash) && target.schema["$dynamicAnchor"] == raw_fragment
 
-        @dynamic_scope.each do |resource|
+        Array(@dynamic_scope).each do |resource|
           dynamic = @graph.dynamic_anchor(resource, raw_fragment)
           return dynamic if dynamic
         end
