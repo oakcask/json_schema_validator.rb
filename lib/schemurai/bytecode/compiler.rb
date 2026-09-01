@@ -113,6 +113,9 @@ module Schemurai
         @tracks_evaluation = code.any? do |instruction|
           %i[array object].include?(instruction.first) && instruction[1].unevaluated
         end
+        @tracks_dynamic_scope = code.any? do |opcode, operand|
+          opcode == :ref || opcode == :recursive_ref || opcode == :dynamic_ref || dynamic_scope_operand?(operand)
+        end
         freeze
       end
 
@@ -122,6 +125,38 @@ module Schemurai
 
       def recursive_anchor?
         @recursive_anchor
+      end
+
+      def tracks_dynamic_scope?
+        @tracks_dynamic_scope
+      end
+
+      private def dynamic_scope_operand?(operand)
+        case operand
+        when Program
+          operand.tracks_dynamic_scope?
+        when Array
+          operand.any? { |item| dynamic_scope_operand?(item) }
+        when Hash
+          operand.each_value { |item| return true if dynamic_scope_operand?(item) }
+          false
+        when ArrayRules
+          dynamic_scope_operand?(operand.prefix_items) ||
+            dynamic_scope_operand?(operand.items) ||
+            dynamic_scope_operand?(operand.additional) ||
+            dynamic_scope_operand?(operand.contains) ||
+            dynamic_scope_operand?(operand.unevaluated)
+        when ObjectRules
+          dynamic_scope_operand?(operand.properties) ||
+            dynamic_scope_operand?(operand.patterns) ||
+            dynamic_scope_operand?(operand.additional) ||
+            dynamic_scope_operand?(operand.property_names) ||
+            dynamic_scope_operand?(operand.dependencies) ||
+            dynamic_scope_operand?(operand.dependent_schemas) ||
+            dynamic_scope_operand?(operand.unevaluated)
+        else
+          false
+        end
       end
     end
 
