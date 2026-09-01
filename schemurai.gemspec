@@ -8,7 +8,7 @@ Gem::Specification.new do |spec|
   spec.authors = ["Kuya KOHARA (oakcask)"]
   spec.email = ["kuya.kohara@gmail.com"]
 
-  spec.summary = "A small, light-weight-dependency JSON Schema validator"
+  spec.summary = "A fast, Ractor-safe, pure Ruby JSON Schema Draft 7+ validator"
   spec.description = "Validates Ruby values against JSON Schema Draft 7, 2019-09, and 2020-12 schemas."
   spec.homepage = "https://github.com/oakcask/schemurai"
   spec.license = "MIT"

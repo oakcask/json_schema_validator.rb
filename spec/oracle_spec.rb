@@ -38,12 +38,12 @@ RSpec.describe "the Ruby oracle" do
 
   it "compares behavior while retaining backend diagnostics" do
     expected = [{"case_id" => "one", "operation" => "valid", "backend" => "ruby", "result" => {"valid" => true}}]
-    actual = [{"case_id" => "one", "operation" => "valid", "backend" => "bytecode", "result" => {"valid" => true}}]
+    actual = [{"case_id" => "one", "operation" => "valid", "backend" => "vm", "result" => {"valid" => true}}]
 
     expect(SchemuraiOracle::Comparator.new.compare(expected, actual)).to be_empty
   end
 
-  it "rejects a bytecode stream that silently identifies as Ruby" do
+  it "rejects a VM stream that silently identifies as Ruby" do
     expected = [{"case_id" => "one", "operation" => "valid", "backend" => "ruby", "result" => {"valid" => true}}]
     fallback = [{"case_id" => "one", "operation" => "valid", "backend" => "ruby", "result" => {"valid" => true}}]
 

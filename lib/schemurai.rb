@@ -72,8 +72,8 @@ module Schemurai
 
     def initialize(graph, root, content:, format:, backend: :ruby)
       @backend = backend
-      @evaluator = if backend == :bytecode
-        Bytecode::Evaluator.new(graph, root, content: content, format: format)
+      @evaluator = if backend == :vm
+        VM::Evaluator.new(graph, root, content: content, format: format)
       else
         Internal::Evaluator.new(graph, root, content: content, format: format)
       end
