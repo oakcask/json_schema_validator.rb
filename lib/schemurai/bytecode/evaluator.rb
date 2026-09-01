@@ -55,8 +55,14 @@ module Schemurai
           case opcode
           when :boolean
             return operand
-          when :reference
-            target = reference_target(program, operand, extra)
+          when :ref
+            target = @compiler.resolve(program, operand.value)
+            return false unless valid_reference?(program, target, instance)
+          when :recursive_ref
+            target = recursive_target(program, operand)
+            return false unless valid_reference?(program, target, instance)
+          when :dynamic_ref
+            target = dynamic_target(program, operand)
             return false unless valid_reference?(program, target, instance)
           when :type_null
             return false unless instance.nil?
@@ -125,8 +131,12 @@ module Schemurai
               add_error("falseSchema", "boolean schema is false", append_keyword: false)
               evaluation = Evaluation.invalid
             end
-          when :reference
-            evaluation = evaluation.merge(evaluate_reference(program, operand, extra, instance))
+          when :ref
+            evaluation = evaluation.merge(evaluate_ref(program, operand, instance))
+          when :recursive_ref
+            evaluation = evaluation.merge(evaluate_recursive_ref(program, operand, instance))
+          when :dynamic_ref
+            evaluation = evaluation.merge(evaluate_dynamic_ref(program, operand, instance))
           when :type_null
             check_compiled_type("null", instance.nil?)
           when :type_boolean
@@ -178,18 +188,9 @@ module Schemurai
         @dynamic_scope.pop
       end
 
-      private def reference_target(program, keyword, reference)
-        case keyword
-        when "$ref" then @compiler.resolve(program, reference)
-        when "$recursiveRef" then recursive_target(program, reference)
-        when "$dynamicRef" then dynamic_target(program, reference)
-        else raise "unknown reference instruction #{keyword.inspect}"
-        end
-      end
-
-      private def recursive_target(program, reference)
-        target = @compiler.resolve(program, reference)
-        return target unless reference.to_s.end_with?("#") && target.recursive_anchor?
+      private def recursive_target(program, rules)
+        target = @compiler.resolve(program, rules.value)
+        return target unless rules.fragment == "" && target.recursive_anchor?
 
         dynamic = @dynamic_scope.filter_map do |resource|
           root = resource.root
@@ -199,9 +200,9 @@ module Schemurai
         dynamic || target
       end
 
-      private def dynamic_target(program, reference)
-        target = @compiler.resolve(program, reference)
-        fragment = reference.to_s.split("#", 2)[1]
+      private def dynamic_target(program, rules)
+        target = @compiler.resolve(program, rules.value)
+        fragment = rules.fragment
         return target if fragment.nil? || fragment.empty? || fragment.start_with?("/")
 
         return target unless target.dynamic_anchor == fragment
@@ -225,8 +226,26 @@ module Schemurai
         instances&.delete(instance_id) if activated
       end
 
-      private def evaluate_reference(source, keyword, reference, instance)
-        target = reference_target(source, keyword, reference)
+      private def evaluate_ref(source, rules, instance)
+        target = @compiler.resolve(source, rules.value)
+        evaluate_reference(source, target, instance, "$ref")
+      rescue ResolutionError => error
+        unresolved_reference("$ref", error)
+      end
+
+      private def evaluate_recursive_ref(source, rules, instance)
+        evaluate_reference(source, recursive_target(source, rules), instance, "$recursiveRef")
+      rescue ResolutionError => error
+        unresolved_reference("$recursiveRef", error)
+      end
+
+      private def evaluate_dynamic_ref(source, rules, instance)
+        evaluate_reference(source, dynamic_target(source, rules), instance, "$dynamicRef")
+      rescue ResolutionError => error
+        unresolved_reference("$dynamicRef", error)
+      end
+
+      private def evaluate_reference(source, target, instance, keyword)
         instances = active_instances(source)
         instance_id = instance.object_id
         return Evaluation.valid if instances[instance_id]
@@ -234,11 +253,13 @@ module Schemurai
         instances[instance_id] = true
         activated = true
         evaluate_at(target, instance, MISSING_SEGMENT, keyword)
-      rescue ResolutionError => error
-        add_error(keyword, error.message, append_keyword: false)
-        Evaluation.invalid
       ensure
         instances&.delete(instance_id) if activated
+      end
+
+      private def unresolved_reference(keyword, error)
+        add_error(keyword, error.message, append_keyword: false)
+        Evaluation.invalid
       end
 
       private def active_instances(program)
