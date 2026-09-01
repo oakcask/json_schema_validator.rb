@@ -17,6 +17,36 @@ module Schemurai
     EXCLUSIVE_MINIMUM = 1 << 3
     MULTIPLE_OF = 1 << 4
 
+    TypeRules = Data.define(:mask, :names)
+
+    TYPE_NULL = 1 << 0
+    TYPE_BOOLEAN = 1 << 1
+    TYPE_OBJECT = 1 << 2
+    TYPE_ARRAY = 1 << 3
+    TYPE_NUMBER = 1 << 4
+    TYPE_INTEGER = 1 << 5
+    TYPE_STRING = 1 << 6
+
+    TYPE_BITS = {
+      "null" => TYPE_NULL,
+      "boolean" => TYPE_BOOLEAN,
+      "object" => TYPE_OBJECT,
+      "array" => TYPE_ARRAY,
+      "number" => TYPE_NUMBER,
+      "integer" => TYPE_INTEGER,
+      "string" => TYPE_STRING
+    }.freeze
+
+    TYPE_OPCODES = {
+      "null" => :type_null,
+      "boolean" => :type_boolean,
+      "object" => :type_object,
+      "array" => :type_array,
+      "number" => :type_number,
+      "integer" => :type_integer,
+      "string" => :type_string
+    }.freeze
+
     class Program
       attr_reader :node, :code, :dynamic_anchor
 
@@ -79,7 +109,7 @@ module Schemurai
 
         mask = node.keyword_mask
         categories = Schemurai.const_get(:Internal)::Dialect
-        code << [:type, snapshot(schema["type"])] if (mask & categories::TYPE) != 0 && schema.key?("type")
+        code << compile_type(schema["type"]) if (mask & categories::TYPE) != 0 && schema.key?("type")
         if (mask & categories::ENUM) != 0
           code << [:enum, snapshot(schema["enum"])] if schema.key?("enum")
           code << [:const, snapshot(schema["const"])] if schema.key?("const")
@@ -125,6 +155,13 @@ module Schemurai
           exclusive_minimum: compile_decimal(schema["exclusiveMinimum"]),
           multiple_of: compile_decimal(schema["multipleOf"])
         )
+      end
+
+      private def compile_type(types)
+        return [TYPE_OPCODES.fetch(types)] unless types.is_a?(Array)
+
+        mask = types.reduce(0) { |result, type| result | TYPE_BITS.fetch(type) }
+        [:types, TypeRules.new(mask: mask, names: snapshot(types))]
       end
 
       private def compile_string(node, schema)
