@@ -3,10 +3,15 @@
 module Schemurai
   module Bytecode
     class Program
-      attr_reader :node, :code
+      attr_reader :node, :code, :dynamic_anchor
 
       def initialize(node)
         @node = node
+        schema = node.schema
+        @recursive_anchor = schema.is_a?(Hash) && schema["$recursiveAnchor"] == true
+        @dynamic_anchor = if schema.is_a?(Hash) && schema["$dynamicAnchor"].is_a?(String)
+          schema["$dynamicAnchor"].dup.freeze
+        end
       end
 
       def finish(code)
@@ -19,6 +24,10 @@ module Schemurai
 
       def tracks_evaluation?
         @tracks_evaluation
+      end
+
+      def recursive_anchor?
+        @recursive_anchor
       end
     end
 
@@ -47,18 +56,18 @@ module Schemurai
 
         code = []
         if schema.key?("$ref")
-          code << [:reference, "$ref", schema["$ref"]]
+          code << [:reference, "$ref", snapshot(schema["$ref"])]
           return code unless node.dialect.ref_siblings?
         end
-        code << [:reference, "$recursiveRef", schema["$recursiveRef"]] if schema.key?("$recursiveRef")
-        code << [:reference, "$dynamicRef", schema["$dynamicRef"]] if schema.key?("$dynamicRef")
+        code << [:reference, "$recursiveRef", snapshot(schema["$recursiveRef"])] if schema.key?("$recursiveRef")
+        code << [:reference, "$dynamicRef", snapshot(schema["$dynamicRef"])] if schema.key?("$dynamicRef")
 
         mask = node.keyword_mask
         categories = Schemurai.const_get(:Internal)::Dialect
-        code << [:type, schema["type"]] if (mask & categories::TYPE) != 0 && schema.key?("type")
+        code << [:type, snapshot(schema["type"])] if (mask & categories::TYPE) != 0 && schema.key?("type")
         if (mask & categories::ENUM) != 0
-          code << [:enum, schema["enum"]] if schema.key?("enum")
-          code << [:const, schema["const"]] if schema.key?("const")
+          code << [:enum, snapshot(schema["enum"])] if schema.key?("enum")
+          code << [:const, snapshot(schema["const"])] if schema.key?("const")
         end
         compile_combiners(code, node, schema) if (mask & categories::COMBINER) != 0
         code << [:number, compile_number(schema)] if (mask & categories::NUMBER) != 0
@@ -88,11 +97,11 @@ module Schemurai
 
       private def compile_number(schema)
         comparisons = %w[maximum minimum exclusiveMaximum exclusiveMinimum].filter_map do |keyword|
-          [keyword, schema[keyword]] if schema.key?(keyword)
+          [keyword, snapshot(schema[keyword])].freeze if schema.key?(keyword)
         end
         {
           comparisons: comparisons.freeze,
-          multiple_of: schema["multipleOf"],
+          multiple_of: snapshot(schema["multipleOf"]),
           has_multiple_of: schema.key?("multipleOf")
         }.freeze
       end
@@ -103,12 +112,12 @@ module Schemurai
           has_max_length: schema.key?("maxLength"),
           min_length: schema["minLength"],
           has_min_length: schema.key?("minLength"),
-          pattern: schema["pattern"],
+          pattern: snapshot(schema["pattern"]),
           has_pattern: schema.key?("pattern"),
           format: node.format,
           format_assertion: node.dialect.format_assertion?,
-          content_encoding: schema["contentEncoding"],
-          content_media_type: schema["contentMediaType"]
+          content_encoding: snapshot(schema["contentEncoding"]),
+          content_media_type: snapshot(schema["contentMediaType"])
         }.freeze
       end
 
@@ -145,14 +154,16 @@ module Schemurai
           has_max_properties: schema.key?("maxProperties"),
           min_properties: schema["minProperties"],
           has_min_properties: schema.key?("minProperties"),
-          required: schema["required"],
+          required: snapshot(schema["required"]),
           has_required: schema.key?("required"),
           properties: compile_map(node, schema, "properties"),
           patterns: compile_map(node, schema, "patternProperties"),
           additional: schema.key?("additionalProperties") ? compile(node.child("additionalProperties")) : nil,
           property_names: schema.key?("propertyNames") ? compile(node.child("propertyNames")) : nil,
           dependencies: compile_dependencies(node, schema),
-          dependent_required: schema.fetch("dependentRequired", {}).to_a.freeze,
+          dependent_required: schema.fetch("dependentRequired", {}).map do |name, required_names|
+            [snapshot(name), snapshot(required_names)].freeze
+          end.freeze,
           dependent_schemas: compile_map(node, schema, "dependentSchemas"),
           unevaluated: schema.key?("unevaluatedProperties") ? compile(node.child("unevaluatedProperties")) : nil
         }.freeze
@@ -160,15 +171,28 @@ module Schemurai
 
       private def compile_map(node, schema, keyword)
         schema.fetch(keyword, {}).each_key.to_h do |name|
-          [name, compile(node.child(keyword, name))]
+          [snapshot(name), compile(node.child(keyword, name))]
         end.freeze
       end
 
       private def compile_dependencies(node, schema)
         schema.fetch("dependencies", {}).map do |name, dependency|
-          compiled = dependency.is_a?(Array) ? dependency : compile(node.child("dependencies", name))
-          [name, compiled].freeze
+          compiled = dependency.is_a?(Array) ? snapshot(dependency) : compile(node.child("dependencies", name))
+          [snapshot(name), compiled].freeze
         end.freeze
+      end
+
+      private def snapshot(value)
+        case value
+        when Hash
+          value.to_h { |key, item| [snapshot(key), snapshot(item)] }.freeze
+        when Array
+          value.map { |item| snapshot(item) }.freeze
+        when String
+          value.dup.freeze
+        else
+          value
+        end
       end
     end
   end

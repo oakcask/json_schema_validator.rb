@@ -161,14 +161,14 @@ module Schemurai
 
       private def recursive_target(program, reference)
         target = @compiler.resolve(program, reference)
-        schema = target.node.schema
-        return target unless reference.to_s.end_with?("#") && schema.is_a?(Hash) && schema["$recursiveAnchor"] == true
+        return target unless reference.to_s.end_with?("#") && target.recursive_anchor?
 
         dynamic = @dynamic_scope.filter_map do |resource|
           root = resource.root
-          root if root.schema.is_a?(Hash) && root.schema["$recursiveAnchor"] == true
+          compiled = @compiler.compile(root)
+          compiled if compiled.recursive_anchor?
         end.first
-        dynamic ? @compiler.compile(dynamic) : target
+        dynamic || target
       end
 
       private def dynamic_target(program, reference)
@@ -176,8 +176,7 @@ module Schemurai
         fragment = reference.to_s.split("#", 2)[1]
         return target if fragment.nil? || fragment.empty? || fragment.start_with?("/")
 
-        schema = target.node.schema
-        return target unless schema.is_a?(Hash) && schema["$dynamicAnchor"] == fragment
+        return target unless target.dynamic_anchor == fragment
 
         @dynamic_scope.each do |resource|
           dynamic = @graph.dynamic_anchor(resource, fragment)
