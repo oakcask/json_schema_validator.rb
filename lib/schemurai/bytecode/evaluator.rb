@@ -58,8 +58,22 @@ module Schemurai
           when :reference
             target = reference_target(program, operand, extra)
             return false unless valid_reference?(program, target, instance)
-          when :type
-            return false unless valid_type?(operand, instance)
+          when :type_null
+            return false unless instance.nil?
+          when :type_boolean
+            return false unless instance == true || instance == false
+          when :type_object
+            return false unless instance.is_a?(Hash)
+          when :type_array
+            return false unless instance.is_a?(Array)
+          when :type_number
+            return false unless number?(instance)
+          when :type_integer
+            return false unless integer?(instance)
+          when :type_string
+            return false unless instance.is_a?(String)
+          when :types
+            return false if (operand.mask & instance_type_mask(instance, integer: (operand.mask & TYPE_INTEGER) != 0)).zero?
           when :enum
             return false unless operand.any? { |candidate| json_equal?(candidate, instance) }
           when :const
@@ -113,8 +127,22 @@ module Schemurai
             end
           when :reference
             evaluation = evaluation.merge(evaluate_reference(program, operand, extra, instance))
-          when :type
-            check_type(operand, instance)
+          when :type_null
+            check_compiled_type("null", instance.nil?)
+          when :type_boolean
+            check_compiled_type("boolean", instance == true || instance == false)
+          when :type_object
+            check_compiled_type("object", instance.is_a?(Hash))
+          when :type_array
+            check_compiled_type("array", instance.is_a?(Array))
+          when :type_number
+            check_compiled_type("number", number?(instance))
+          when :type_integer
+            check_compiled_type("integer", integer?(instance))
+          when :type_string
+            check_compiled_type("string", instance.is_a?(String))
+          when :types
+            check_compiled_types(operand, instance)
           when :enum
             add_error("enum", "value is not in enum") unless operand.any? { |candidate| json_equal?(candidate, instance) }
           when :const
@@ -218,28 +246,31 @@ module Schemurai
         active[program.node.object_id] ||= {}
       end
 
-      private def valid_type?(types, value)
-        return types.any? { |type| type?(value, type) } if types.is_a?(Array)
-
-        type?(value, types)
+      private def check_compiled_type(name, valid)
+        add_error("type", "expected #{name}") unless valid
       end
 
-      private def check_type(types, value)
-        choices = Array(types)
-        add_error("type", "expected #{choices.join(" or ")}") unless choices.any? { |type| type?(value, type) }
+      private def check_compiled_types(rules, value)
+        instance_mask = instance_type_mask(value, integer: (rules.mask & TYPE_INTEGER) != 0)
+        return unless (rules.mask & instance_mask).zero?
+
+        add_error("type", "expected #{rules.names.join(" or ")}")
       end
 
-      private def type?(value, type)
-        case type
-        when "null" then value.nil?
-        when "boolean" then value == true || value == false
-        when "object" then value.is_a?(Hash)
-        when "array" then value.is_a?(Array)
-        when "number" then number?(value)
-        when "integer" then number?(value) && value.finite? && value.to_i == value
-        when "string" then value.is_a?(String)
-        else false
-        end
+      private def instance_type_mask(value, integer:)
+        return TYPE_NULL if value.nil?
+        return TYPE_BOOLEAN if value == true || value == false
+        return TYPE_OBJECT if value.is_a?(Hash)
+        return TYPE_ARRAY if value.is_a?(Array)
+        return TYPE_STRING if value.is_a?(String)
+        return 0 unless number?(value)
+        return TYPE_NUMBER unless integer
+
+        (value.finite? && value.to_i == value) ? TYPE_NUMBER | TYPE_INTEGER : TYPE_NUMBER
+      end
+
+      private def integer?(value)
+        number?(value) && value.finite? && value.to_i == value
       end
 
       private def valid_number?(rules, value)

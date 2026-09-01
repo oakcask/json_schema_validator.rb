@@ -12,10 +12,10 @@ RSpec.describe "the Ruby bytecode backend" do
     program = evaluator.instance_variable_get(:@root)
     object_rules = program.code.assoc(:object).fetch(1)
 
-    expect(program.code.map(&:first)).to eq(%i[type object])
+    expect(program.code.map(&:first)).to eq(%i[type_object object])
     expect(program.code).to be_frozen
     expect(program.code).to all(be_frozen)
-    expect(object_rules.fetch(:properties).fetch("name").code.map(&:first)).to eq([:type])
+    expect(object_rules.fetch(:properties).fetch("name").code.map(&:first)).to eq([:type_string])
   end
 
   it "executes the compiled program after the source schema changes", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
