@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Schemurai
-  module Bytecode
+  module VM
     NumberRules = Data.define(
       :mask,
       :maximum,

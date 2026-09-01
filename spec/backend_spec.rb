@@ -14,18 +14,18 @@ RSpec.describe "backend selection" do
     expect(validator.backend).to eq(:ruby)
   end
 
-  it "selects the Ruby bytecode backend explicitly", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
-    registry = Schemurai::SchemaRegistry.new(backend: :bytecode)
+  it "selects the VM backend explicitly", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
+    registry = Schemurai::SchemaRegistry.new(backend: :vm)
     validator = registry.compile({"type" => "integer"})
 
-    expect(registry.backend).to eq(:bytecode)
-    expect(validator.backend).to eq(:bytecode)
+    expect(registry.backend).to eq(:vm)
+    expect(validator.backend).to eq(:vm)
     expect(validator.valid?(1)).to be(true)
     expect(validator.valid?(1.5)).to be(false)
   end
 
   it "rejects removed and unknown backends", :aggregate_failures do
-    %i[native unknown].each do |backend|
+    %i[bytecode native unknown].each do |backend|
       expect { Schemurai.compile(true, backend: backend) }
         .to raise_error(Schemurai::Error, /unknown Schemurai backend/)
     end

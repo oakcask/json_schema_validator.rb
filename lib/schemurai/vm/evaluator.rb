@@ -6,7 +6,7 @@ require_relative "../evaluation"
 require_relative "compiler"
 
 module Schemurai
-  module Bytecode
+  module VM
     class Evaluator
       MISSING_SEGMENT = Object.new.freeze
 
@@ -111,7 +111,7 @@ module Schemurai
           when :object
             return false if instance.is_a?(Hash) && !valid_object?(operand, instance)
           else
-            raise "unknown bytecode instruction #{opcode.inspect}"
+            raise "unknown VM instruction #{opcode.inspect}"
           end
         end
         true
@@ -170,7 +170,7 @@ module Schemurai
           when :object
             evaluation = evaluation.merge(check_object(operand, instance, evaluation)) if instance.is_a?(Hash)
           else
-            raise "unknown bytecode instruction #{opcode.inspect}"
+            raise "unknown VM instruction #{opcode.inspect}"
           end
         end
         (@error_count == before) ? evaluation : Evaluation.invalid
@@ -792,5 +792,5 @@ module Schemurai
     end
   end
 
-  private_constant :Bytecode
+  private_constant :VM
 end

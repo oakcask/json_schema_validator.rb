@@ -127,7 +127,9 @@ registry = Schemurai::SchemaRegistry.new(
   schemas: {
     "https://example.test/positive" => { "type" => "integer", "minimum" => 1 },
     "https://example.test/value" => { "$ref" => "https://example.test/positive" }
-  }
+  },
+  # enable virtual machine backend that is faster for iterative validation.
+  backend: :vm
 )
 registry.make_shareable
 
@@ -145,8 +147,8 @@ must not be shared between threads or Ractors.
 
 `Schemurai.backend`, `SchemaRegistry#backend`, and `Validator#backend` expose
 the actual backend. Pass `backend: :ruby` to force the Ruby oracle or
-`backend: :bytecode` to compile schemas for the Ruby bytecode VM. Schema graph
-construction remains shared Ruby infrastructure. Environment-based selection
+`backend: :vm` to ahead-of-time compile schemas for the validator virtual machine.
+Schema graph construction remains shared Ruby infrastructure. Environment-based selection
 is documented in [`docs/backend-selection.md`](docs/backend-selection.md).
 
 ## JSON Schema conformance

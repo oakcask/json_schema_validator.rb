@@ -2,8 +2,8 @@
 
 module Schemurai
   module Backend
-    BYTECODE_FEATURE = "bytecode/evaluator"
-    CHOICES = %i[default ruby bytecode].freeze
+    VM_FEATURE = "vm/evaluator"
+    CHOICES = %i[default ruby vm].freeze
 
     module_function def requested
       value = ENV.fetch("SCHEMURAI_BACKEND", "default").to_sym
@@ -17,7 +17,7 @@ module Schemurai
       raise Error, "unknown Schemurai backend #{selection.inspect}" unless CHOICES.include?(selection)
 
       selection = production_default if selection == :default
-      load_bytecode! if selection == :bytecode
+      load_vm! if selection == :vm
       selection
     end
 
@@ -25,8 +25,8 @@ module Schemurai
       :ruby
     end
 
-    module_function def load_bytecode!
-      require_relative BYTECODE_FEATURE
+    module_function def load_vm!
+      require_relative VM_FEATURE
     end
   end
 end

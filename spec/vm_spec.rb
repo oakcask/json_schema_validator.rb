@@ -2,11 +2,11 @@
 
 require_relative "spec_helper"
 
-RSpec.describe "the Ruby bytecode backend" do
+RSpec.describe "the VM backend" do
   it "compiles schema nodes into frozen instruction streams", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
     validator = Schemurai.compile(
       {"type" => "object", "properties" => {"name" => {"type" => "string"}}},
-      backend: :bytecode
+      backend: :vm
     )
     evaluator = validator.instance_variable_get(:@evaluator)
     program = evaluator.instance_variable_get(:@root)
@@ -20,7 +20,7 @@ RSpec.describe "the Ruby bytecode backend" do
 
   it "executes the compiled program after the source schema changes", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
     schema = {"type" => "integer"}
-    validator = Schemurai.compile(schema, backend: :bytecode)
+    validator = Schemurai.compile(schema, backend: :vm)
     schema.clear
 
     expect(validator.valid?(1)).to be(true)
@@ -44,7 +44,7 @@ RSpec.describe "the Ruby bytecode backend" do
     const_value = schema.dig("properties", "value", "const", "tag")
     pattern = schema.dig("properties", "name", "pattern")
     required_kind = schema.fetch("required").first
-    validator = Schemurai.compile(schema, backend: :bytecode)
+    validator = Schemurai.compile(schema, backend: :vm)
 
     valid = {"kind" => {"tag" => ["fixed"]}, "value" => {"tag" => ["fixed"]}, "name" => "fixed"}
     invalid = [
@@ -73,7 +73,7 @@ RSpec.describe "the Ruby bytecode backend" do
 
   it "keeps a resolved external program stable after its source changes", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
     external = {"type" => ["integer"]}
-    registry = Schemurai::SchemaRegistry.new(schemas: {"urn:external" => external}, backend: :bytecode)
+    registry = Schemurai::SchemaRegistry.new(schemas: {"urn:external" => external}, backend: :vm)
     validator = registry.compile({"$ref" => "urn:external"})
 
     expect(validator.valid?(1)).to be(true)
