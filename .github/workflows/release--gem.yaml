@@ -75,5 +75,6 @@ jobs:
         run: gem push schemurai-${{ needs.release.outputs.version }}.gem
       - name: Publish GitHub release
         env:
+          GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: gh release edit ${{ needs.release.outputs.tag_name }} --draft=false
