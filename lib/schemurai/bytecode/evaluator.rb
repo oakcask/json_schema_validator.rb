@@ -330,11 +330,11 @@ module Schemurai
 
       private def valid_string?(rules, value)
         length = value.length
-        return false if rules.fetch(:has_max_length) && length > rules.fetch(:max_length)
-        return false if rules.fetch(:has_min_length) && length < rules.fetch(:min_length)
-        return false if rules.fetch(:has_pattern) && !ecma_regexp(rules.fetch(:pattern)).match?(value)
+        return false if rules.has_max_length && length > rules.max_length
+        return false if rules.has_min_length && length < rules.min_length
+        return false if rules.has_pattern && !ecma_regexp(rules.pattern).match?(value)
         if format_asserted?(rules)
-          return false unless rules.fetch(:format).call(value)
+          return false unless rules.format.call(value)
         end
         return valid_content?(rules, value) if @validate_content
 
@@ -345,17 +345,17 @@ module Schemurai
 
       private def check_string(rules, value)
         length = value.length
-        if rules.fetch(:has_max_length) && length > rules.fetch(:max_length)
+        if rules.has_max_length && length > rules.max_length
           add_error("maxLength", "size limit was exceeded")
         end
-        if rules.fetch(:has_min_length) && length < rules.fetch(:min_length)
+        if rules.has_min_length && length < rules.min_length
           add_error("minLength", "size limit was exceeded")
         end
-        if rules.fetch(:has_pattern) && !ecma_regexp(rules.fetch(:pattern)).match?(value)
+        if rules.has_pattern && !ecma_regexp(rules.pattern).match?(value)
           add_error("pattern", "string does not match pattern")
         end
-        if format_asserted?(rules) && !rules.fetch(:format).call(value)
-          add_error("format", "string is not a valid #{rules.fetch(:format).name}")
+        if format_asserted?(rules) && !rules.format.call(value)
+          add_error("format", "string is not a valid #{rules.format.name}")
         end
         check_content(rules, value) if @validate_content
       rescue RegexpError
@@ -363,66 +363,66 @@ module Schemurai
       end
 
       private def format_asserted?(rules)
-        (@validate_format || rules.fetch(:format_assertion)) && !rules.fetch(:format).nil?
+        (@validate_format || rules.format_assertion) && !rules.format.nil?
       end
 
       private def valid_content?(rules, value)
-        decoded = (rules.fetch(:content_encoding) == "base64") ? Base64.strict_decode64(value) : value
-        JSON.parse(decoded) if rules.fetch(:content_media_type) == "application/json"
+        decoded = (rules.content_encoding == "base64") ? Base64.strict_decode64(value) : value
+        JSON.parse(decoded) if rules.content_media_type == "application/json"
         true
       rescue ArgumentError, JSON::ParserError
         false
       end
 
       private def check_content(rules, value)
-        decoded = (rules.fetch(:content_encoding) == "base64") ? Base64.strict_decode64(value) : value
-        return unless rules.fetch(:content_media_type) == "application/json"
+        decoded = (rules.content_encoding == "base64") ? Base64.strict_decode64(value) : value
+        return unless rules.content_media_type == "application/json"
 
         JSON.parse(decoded)
       rescue ArgumentError, JSON::ParserError
-        keyword = (rules.fetch(:content_encoding) == "base64") ? "contentEncoding" : "contentMediaType"
+        keyword = (rules.content_encoding == "base64") ? "contentEncoding" : "contentMediaType"
         add_error(keyword, "string content is invalid")
       end
 
       private def valid_array?(rules, value)
         length = value.length
-        return false if rules.fetch(:has_max_items) && length > rules.fetch(:max_items)
-        return false if rules.fetch(:has_min_items) && length < rules.fetch(:min_items)
-        if rules.fetch(:unique)
+        return false if rules.has_max_items && length > rules.max_items
+        return false if rules.has_min_items && length < rules.min_items
+        if rules.unique
           value.each_with_index do |item, index|
             return false if value[0...index].any? { |previous| json_equal?(previous, item) }
           end
         end
 
-        if (prefix_items = rules.fetch(:prefix_items))
+        if (prefix_items = rules.prefix_items)
           prefix_items.each_with_index do |child, index|
             break if index >= length
             return false unless evaluate_valid(child, value[index])
           end
         end
 
-        items = rules.fetch(:items)
-        if rules.fetch(:items_list)
+        items = rules.items
+        if rules.items_list
           items.each_with_index do |child, index|
             break if index >= length
             return false unless evaluate_valid(child, value[index])
           end
-          if length > items.length && (additional = rules.fetch(:additional))
+          if length > items.length && (additional = rules.additional)
             (items.length...length).each do |index|
               return false unless evaluate_valid(additional, value[index])
             end
           end
         elsif items
-          start = rules.fetch(:prefix_items)&.length || 0
+          start = rules.prefix_items&.length || 0
           (start...length).each do |index|
             return false unless evaluate_valid(items, value[index])
           end
         end
 
-        if (contains = rules.fetch(:contains))
-          if rules.fetch(:count_contains)
+        if (contains = rules.contains)
+          if rules.count_contains
             matches = value.count { |item| evaluate_valid(contains, item) }
-            return false if matches < rules.fetch(:min_contains) || matches > rules.fetch(:max_contains)
+            return false if matches < rules.min_contains || matches > rules.max_contains
           else
             return false unless value.any? { |item| evaluate_valid(contains, item) }
           end
@@ -432,20 +432,20 @@ module Schemurai
 
       private def check_array(rules, value, prior_evaluation)
         evaluated = []
-        if rules.fetch(:has_max_items) && value.length > rules.fetch(:max_items)
+        if rules.has_max_items && value.length > rules.max_items
           add_error("maxItems", "size limit was exceeded")
         end
-        if rules.fetch(:has_min_items) && value.length < rules.fetch(:min_items)
+        if rules.has_min_items && value.length < rules.min_items
           add_error("minItems", "size limit was exceeded")
         end
-        if rules.fetch(:unique)
+        if rules.unique
           duplicate = value.each_with_index.any? do |item, index|
             value[0...index].any? { |previous| json_equal?(previous, item) }
           end
           add_error("uniqueItems", "array items are not unique") if duplicate
         end
 
-        if (prefix_items = rules.fetch(:prefix_items))
+        if (prefix_items = rules.prefix_items)
           prefix_items.each_with_index do |child, index|
             break if index >= value.length
             evaluate_at(child, value[index], index, "prefixItems", index)
@@ -453,39 +453,39 @@ module Schemurai
           end
         end
 
-        items = rules.fetch(:items)
-        if rules.fetch(:items_list)
+        items = rules.items
+        if rules.items_list
           items.each_with_index do |child, index|
             break if index >= value.length
             evaluate_at(child, value[index], index, "items", index)
             evaluated << index
           end
-          if value.length > items.length && (additional = rules.fetch(:additional))
+          if value.length > items.length && (additional = rules.additional)
             (items.length...value.length).each do |index|
               evaluate_at(additional, value[index], index, "additionalItems")
               evaluated << index
             end
           end
         elsif items
-          start = rules.fetch(:prefix_items)&.length || 0
+          start = rules.prefix_items&.length || 0
           (start...value.length).each do |index|
             evaluate_at(items, value[index], index, "items")
             evaluated << index
           end
         end
 
-        if (contains = rules.fetch(:contains))
+        if (contains = rules.contains)
           matched = value.each_index.select do |index|
             trial_at(contains, value[index], index, "contains").valid?
           end
-          unless matched.length.between?(rules.fetch(:min_contains), rules.fetch(:max_contains))
+          unless matched.length.between?(rules.min_contains, rules.max_contains)
             add_error("contains", "matched #{matched.length} array items")
           end
           evaluated.concat(matched)
         end
 
         combined = prior_evaluation.evaluated_items | evaluated
-        if (unevaluated = rules.fetch(:unevaluated))
+        if (unevaluated = rules.unevaluated)
           ((0...value.length).to_a - combined).each do |index|
             evaluate_at(unevaluated, value[index], index, "unevaluatedItems")
             evaluated << index
@@ -496,15 +496,15 @@ module Schemurai
 
       private def valid_object?(rules, value)
         length = value.length
-        return false if rules.fetch(:has_max_properties) && length > rules.fetch(:max_properties)
-        return false if rules.fetch(:has_min_properties) && length < rules.fetch(:min_properties)
-        if rules.fetch(:has_required) && !rules.fetch(:required).all? { |name| value.key?(name) }
+        return false if rules.has_max_properties && length > rules.max_properties
+        return false if rules.has_min_properties && length < rules.min_properties
+        if rules.has_required && !rules.required.all? { |name| value.key?(name) }
           return false
         end
 
-        properties = rules.fetch(:properties)
-        patterns = rules.fetch(:patterns)
-        additional = rules.fetch(:additional)
+        properties = rules.properties
+        patterns = rules.patterns
+        additional = rules.additional
         value.each do |name, property_value|
           matched = false
           if (child = properties[name])
@@ -519,10 +519,10 @@ module Schemurai
           return false if !matched && additional && !evaluate_valid(additional, property_value)
         end
 
-        if (property_names = rules.fetch(:property_names))
+        if (property_names = rules.property_names)
           value.each_key { |name| return false unless evaluate_valid(property_names, name) }
         end
-        rules.fetch(:dependencies).each do |name, dependency|
+        rules.dependencies.each do |name, dependency|
           next unless value.key?(name)
           if dependency.is_a?(Array)
             return false unless dependency.all? { |required_name| value.key?(required_name) }
@@ -530,11 +530,11 @@ module Schemurai
             return false unless evaluate_valid(dependency, value)
           end
         end
-        rules.fetch(:dependent_required).each do |name, required_names|
+        rules.dependent_required.each do |name, required_names|
           next unless value.key?(name)
           return false unless required_names.all? { |required_name| value.key?(required_name) }
         end
-        rules.fetch(:dependent_schemas).each do |name, child|
+        rules.dependent_schemas.each do |name, child|
           next unless value.key?(name)
           return false unless evaluate_valid(child, value)
         end
@@ -543,18 +543,20 @@ module Schemurai
 
       private def check_object(rules, value, prior_evaluation)
         evaluated = []
-        if rules.fetch(:has_max_properties) && value.length > rules.fetch(:max_properties)
+        if rules.has_max_properties && value.length > rules.max_properties
           add_error("maxProperties", "size limit was exceeded")
         end
-        if rules.fetch(:has_min_properties) && value.length < rules.fetch(:min_properties)
+        if rules.has_min_properties && value.length < rules.min_properties
           add_error("minProperties", "size limit was exceeded")
         end
-        Array(rules.fetch(:required)).each do |name|
-          add_error("required", "required property #{name.inspect} is missing") unless value.key?(name)
+        if (required = rules.required)
+          required.each do |name|
+            add_error("required", "required property #{name.inspect} is missing") unless value.key?(name)
+          end
         end
 
-        properties = rules.fetch(:properties)
-        patterns = rules.fetch(:patterns)
+        properties = rules.properties
+        patterns = rules.patterns
         value.each do |name, property_value|
           matched = false
           if (child = properties[name])
@@ -568,16 +570,16 @@ module Schemurai
             evaluate_at(child, property_value, name, "patternProperties", pattern)
             evaluated << name
           end
-          if !matched && (additional = rules.fetch(:additional))
+          if !matched && (additional = rules.additional)
             evaluate_at(additional, property_value, name, "additionalProperties")
             evaluated << name
           end
         end
 
-        if (property_names = rules.fetch(:property_names))
+        if (property_names = rules.property_names)
           value.each_key { |name| evaluate_at(property_names, name, name, "propertyNames") }
         end
-        rules.fetch(:dependencies).each do |name, dependency|
+        rules.dependencies.each do |name, dependency|
           next unless value.key?(name)
           if dependency.is_a?(Array)
             dependency.each do |required_name|
@@ -590,7 +592,7 @@ module Schemurai
             evaluated.concat(result.evaluated_properties) if result.valid?
           end
         end
-        rules.fetch(:dependent_required).each do |name, required_names|
+        rules.dependent_required.each do |name, required_names|
           next unless value.key?(name)
           required_names.each do |required_name|
             unless value.key?(required_name)
@@ -598,14 +600,14 @@ module Schemurai
             end
           end
         end
-        rules.fetch(:dependent_schemas).each do |name, child|
+        rules.dependent_schemas.each do |name, child|
           next unless value.key?(name)
           result = evaluate_at(child, value, MISSING_SEGMENT, "dependentSchemas", name)
           evaluated.concat(result.evaluated_properties) if result.valid?
         end
 
         combined = prior_evaluation.evaluated_properties | evaluated
-        if (unevaluated = rules.fetch(:unevaluated))
+        if (unevaluated = rules.unevaluated)
           (value.keys - combined).each do |name|
             evaluate_at(unevaluated, value[name], name, "unevaluatedProperties")
             evaluated << name
