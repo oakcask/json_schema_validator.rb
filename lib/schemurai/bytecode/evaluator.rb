@@ -373,9 +373,11 @@ module Schemurai
           end
         end
 
-        Array(rules.fetch(:prefix_items)).each_with_index do |child, index|
-          break if index >= length
-          return false unless evaluate_valid(child, value[index])
+        if (prefix_items = rules.fetch(:prefix_items))
+          prefix_items.each_with_index do |child, index|
+            break if index >= length
+            return false unless evaluate_valid(child, value[index])
+          end
         end
 
         items = rules.fetch(:items)
@@ -422,10 +424,12 @@ module Schemurai
           add_error("uniqueItems", "array items are not unique") if duplicate
         end
 
-        Array(rules.fetch(:prefix_items)).each_with_index do |child, index|
-          break if index >= value.length
-          evaluate_at(child, value[index], index, "prefixItems", index)
-          evaluated << index
+        if (prefix_items = rules.fetch(:prefix_items))
+          prefix_items.each_with_index do |child, index|
+            break if index >= value.length
+            evaluate_at(child, value[index], index, "prefixItems", index)
+            evaluated << index
+          end
         end
 
         items = rules.fetch(:items)
