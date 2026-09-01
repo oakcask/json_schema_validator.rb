@@ -15,6 +15,10 @@ end
 
 group :documentation do
   gem "rake", require: false
+  # Installing rdoc by bundler causes plugin loading issue.
+  # https://github.com/ruby/rubygems/issues/9250
+  # https://github.com/ruby/rubygems/issues/9285
+  # https://github.com/ruby/rdoc/issues/1609
   gem "rdoc", require: false
 end
 
