@@ -40,6 +40,9 @@ module Schemurai
       end
 
       require NATIVE_FEATURE
+      unless Schemurai::Native.const_defined?(:Evaluator, false)
+        raise LoadError, "native extension did not define Schemurai::Native::Evaluator"
+      end
     rescue LoadError => error
       raise LoadError, "native backend is unavailable: #{error.message}"
     end

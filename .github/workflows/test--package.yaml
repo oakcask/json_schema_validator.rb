@@ -8,17 +8,21 @@ on:
       - .github/workflows/test--package.yaml
       - .ruby-version
       - schemurai.gemspec
+      - ext/**/*
       - lib/**/*
       - README.md
       - test/package_smoke_test.rb
+      - test/native_evaluator_test.rb
   pull_request:
     paths:
       - .github/workflows/test--package.yaml
       - .ruby-version
       - schemurai.gemspec
+      - ext/**/*
       - lib/**/*
       - README.md
       - test/package_smoke_test.rb
+      - test/native_evaluator_test.rb
 
 permissions:
   contents: read

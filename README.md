@@ -145,9 +145,11 @@ must not be shared between threads or Ractors.
 
 `Schemurai.backend`, `SchemaRegistry#backend`, and `Validator#backend` expose
 the actual backend. Pass `backend: :ruby` to force the Ruby oracle. A forced
-`:native` selection is strict and raises `LoadError` while the native backend is
-unavailable; it never silently falls back. Environment-based selection and the
-Ruby-only loading guard are documented in
+`:native` selection uses the handwritten C evaluator and never silently falls
+back to the Ruby evaluator. Schema compilation and the compiled graph remain
+shared Ruby infrastructure. Source-gem installation requires a C99 compiler,
+Ruby headers, and `make`. Environment-based selection and the Ruby-only loading
+guard are documented in
 [`docs/backend-selection.md`](docs/backend-selection.md).
 
 ## JSON Schema conformance
