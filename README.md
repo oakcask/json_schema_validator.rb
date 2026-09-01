@@ -116,7 +116,7 @@ validation for `contentEncoding` and `contentMediaType` with `content: true`.
 Enable optional format assertions with `format: true`; support for each format is
 listed separately below.
 
-### Thread / Ractor native feature
+### Thread / Ractor support
 
 To share a registry between threads or Ractors, finish registering schemas and
 make the registry shareable first. This eagerly compiles every registered
@@ -145,12 +145,9 @@ must not be shared between threads or Ractors.
 
 `Schemurai.backend`, `SchemaRegistry#backend`, and `Validator#backend` expose
 the actual backend. Pass `backend: :ruby` to force the Ruby oracle or
-`backend: :bytecode` to compile schemas for the Ruby bytecode VM. A forced
-`:native` selection uses the handwritten C evaluator and never silently falls
-back to the Ruby evaluator. Schema graph construction remains shared Ruby
-infrastructure. Source-gem installation requires a C99 compiler, Ruby headers,
-and `make`. Environment-based selection and the Ruby-only loading guard are
-documented in [`docs/backend-selection.md`](docs/backend-selection.md).
+`backend: :bytecode` to compile schemas for the Ruby bytecode VM. Schema graph
+construction remains shared Ruby infrastructure. Environment-based selection
+is documented in [`docs/backend-selection.md`](docs/backend-selection.md).
 
 ## JSON Schema conformance
 

@@ -6,7 +6,7 @@ module SchemuraiOracle
   class Comparator
     METADATA_KEYS = %w[backend ruby_version].freeze
 
-    def initialize(expected_backend: "ruby", actual_backend: "native")
+    def initialize(expected_backend: "ruby", actual_backend: "bytecode")
       @expected_backend = expected_backend
       @actual_backend = actual_backend
     end
