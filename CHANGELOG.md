@@ -1,5 +1,45 @@
 # Changelog
 
+## [2.0.0](https://github.com/oakcask/schemurai/compare/v1.0.0...v2.0.0) (2026-09-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* backend: :bytecode and SCHEMURAI_BACKEND=bytecode are removed; use backend: :vm and SCHEMURAI_BACKEND=vm.
+* Ruby 3.2 and 3.3 are no longer supported.
+
+### Features
+
+* add meta-schema validation ([#74](https://github.com/oakcask/schemurai/issues/74)) ([5dfbed8](https://github.com/oakcask/schemurai/commit/5dfbed8b15f9336e30beba2dbac1b4fab8b1cdeb))
+* add native evaluator ([#56](https://github.com/oakcask/schemurai/issues/56)) ([eccfd90](https://github.com/oakcask/schemurai/commit/eccfd905f1690b459b92532a0ff8bd1cc206a963))
+* add Ruby bytecode backend ([#60](https://github.com/oakcask/schemurai/issues/60)) ([ea53485](https://github.com/oakcask/schemurai/commit/ea5348589a1975bdd8463a675ef44dfb81b91022))
+* freeze bytecode program inputs ([#61](https://github.com/oakcask/schemurai/issues/61)) ([898a409](https://github.com/oakcask/schemurai/commit/898a4095e524251bd9d99f2d913a834aaca50c88))
+* freeze native backend oracle contract ([#47](https://github.com/oakcask/schemurai/issues/47)) ([b8f6274](https://github.com/oakcask/schemurai/commit/b8f62747fd259f5e2569e49461d31a4f2c2e0d68))
+
+
+### Performance Improvements
+
+* avoid empty prefix item arrays ([#65](https://github.com/oakcask/schemurai/issues/65)) ([a3527ea](https://github.com/oakcask/schemurai/commit/a3527ea09622369ddee722a2d73ba7bba7762dc5))
+* cache native evaluator constants ([#57](https://github.com/oakcask/schemurai/issues/57)) ([ad2a43b](https://github.com/oakcask/schemurai/commit/ad2a43ba504f4722dbdfa253ac2b9120731e370a))
+* compile bytecode content flags ([#69](https://github.com/oakcask/schemurai/issues/69)) ([78f194a](https://github.com/oakcask/schemurai/commit/78f194a1ea576656ac8ce61d64dddac76928f9de))
+* compile bytecode type checks ([#64](https://github.com/oakcask/schemurai/issues/64)) ([ec0e4f6](https://github.com/oakcask/schemurai/commit/ec0e4f6ea7c5d9f06e91704ac9b12b4a46a0b5b3))
+* compile numeric bytecode rules ([#63](https://github.com/oakcask/schemurai/issues/63)) ([506932b](https://github.com/oakcask/schemurai/commit/506932b05d2485d69d4147ed8770dc6569235c85))
+* compile reference bytecode opcodes ([#66](https://github.com/oakcask/schemurai/issues/66)) ([cf9c0e2](https://github.com/oakcask/schemurai/commit/cf9c0e2182a78b92c460a518958edfb8598c3c4f))
+* fix bytecode rule layouts ([#67](https://github.com/oakcask/schemurai/issues/67)) ([7294f98](https://github.com/oakcask/schemurai/commit/7294f9808ab1f49c72ec5b91043de6e203224f12))
+* localize bytecode dynamic scope ([#68](https://github.com/oakcask/schemurai/issues/68)) ([64724de](https://github.com/oakcask/schemurai/commit/64724dee21ef9d4a1b0f0507e34b991482e52647))
+* optimize native evaluator hot paths ([#58](https://github.com/oakcask/schemurai/issues/58)) ([0e7bc96](https://github.com/oakcask/schemurai/commit/0e7bc96226c20b41e13989b5cf452eaeea337efd))
+* share VM bytecode across validators ([10ea6cc](https://github.com/oakcask/schemurai/commit/10ea6ccee2dd6d5d0c06625f1ce4436c58f3336a))
+
+
+### Miscellaneous Chores
+
+* test package on maintained Rubies ([#45](https://github.com/oakcask/schemurai/issues/45)) ([4e37b08](https://github.com/oakcask/schemurai/commit/4e37b08553162d0dfeecaae518da99f296c72c76))
+
+
+### Code Refactoring
+
+* rename bytecode backend to vm ([#71](https://github.com/oakcask/schemurai/issues/71)) ([78dfce1](https://github.com/oakcask/schemurai/commit/78dfce110cc2de018a135a5e35d775ea64cde85e))
+
 ## 1.0.0 (2026-08-31)
 
 
