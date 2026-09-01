@@ -7,7 +7,8 @@ require_relative "../oracle/lib/runner"
 
 backend = ENV.fetch("SCHEMURAI_BACKEND", "ruby")
 OptionParser.new do |parser|
-  parser.on("--backend BACKEND", %w[ruby native default]) { |value| backend = value }
+  choices = Schemurai.const_get(:Backend)::CHOICES.map(&:to_s)
+  parser.on("--backend BACKEND", choices) { |value| backend = value }
 end.parse!
 
 runner = SchemuraiOracle::Runner.new(backend: backend)
