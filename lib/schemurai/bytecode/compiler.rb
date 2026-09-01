@@ -58,8 +58,8 @@ module Schemurai
       :has_pattern,
       :format,
       :format_assertion,
-      :content_encoding,
-      :content_media_type
+      :decode_base64,
+      :parse_json
     )
 
     ArrayRules = Data.define(
@@ -94,6 +94,14 @@ module Schemurai
       :dependent_required,
       :dependent_schemas,
       :unevaluated
+    )
+
+    ConditionalRules = Data.define(
+      :condition,
+      :then_branch,
+      :else_branch,
+      :has_then,
+      :has_else
     )
 
     class Program
@@ -154,6 +162,10 @@ module Schemurai
             dynamic_scope_operand?(operand.dependencies) ||
             dynamic_scope_operand?(operand.dependent_schemas) ||
             dynamic_scope_operand?(operand.unevaluated)
+        when ConditionalRules
+          dynamic_scope_operand?(operand.condition) ||
+            dynamic_scope_operand?(operand.then_branch) ||
+            dynamic_scope_operand?(operand.else_branch)
         else
           false
         end
@@ -218,10 +230,16 @@ module Schemurai
         code << [:not, compile(node.child("not"))] if schema.key?("not")
         return unless schema.key?("if")
 
-        branches = {if: compile(node.child("if"))}
-        branches[:then] = compile(node.child("then")) if schema.key?("then")
-        branches[:else] = compile(node.child("else")) if schema.key?("else")
-        code << [:conditional, branches.freeze]
+        code << [
+          :conditional,
+          ConditionalRules.new(
+            compile(node.child("if")),
+            schema.key?("then") ? compile(node.child("then")) : nil,
+            schema.key?("else") ? compile(node.child("else")) : nil,
+            schema.key?("then"),
+            schema.key?("else")
+          )
+        ]
       end
 
       private def compile_number(schema)
@@ -265,8 +283,8 @@ module Schemurai
           schema.key?("pattern"),
           node.format,
           node.dialect.format_assertion?,
-          snapshot(schema["contentEncoding"]),
-          snapshot(schema["contentMediaType"])
+          schema["contentEncoding"] == "base64",
+          schema["contentMediaType"] == "application/json"
         )
       end
 
