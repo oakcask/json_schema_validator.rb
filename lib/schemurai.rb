@@ -37,19 +37,21 @@ module Schemurai
     def initialize(schemas: {}, backend: Backend.requested)
       @backend = Backend.resolve(backend)
       @graph = Internal::SchemaGraph.new(schemas: schemas)
+      @compiler = VM::Compiler.new(@graph) if @backend == :vm
     end
 
     def compile(schema, base_uri: nil, content: false, format: false)
       raise Error, "cannot compile schemas after the registry is made shareable" if shareable?
 
       root = @graph.compile(schema, base_uri: base_uri)
-      Validator.new(@graph, root, content: content, format: format, backend: backend)
+      build_validator(root, content: content, format: format)
     end
 
     def make_shareable
       return self if shareable?
 
       @graph.make_shareable
+      @compiler&.compile_all
       Ractor.make_shareable(self)
     end
 
@@ -63,20 +65,27 @@ module Schemurai
       root = @graph.node_at(uri)
       raise ResolutionError, "unregistered schema URI #{uri.inspect}" unless root
 
-      Validator.new(@graph, root, content: content, format: format, backend: backend)
+      build_validator(root, content: content, format: format)
+    end
+
+    private def build_validator(root, content:, format:)
+      evaluator = if @compiler
+        program = @compiler.compile(root)
+        VM::Evaluator.new(@graph, @compiler, program, content: content, format: format)
+      else
+        Internal::Evaluator.new(@graph, root, content: content, format: format)
+      end
+      Validator.new(evaluator)
     end
   end
 
   class Validator
-    attr_reader :backend
+    def initialize(evaluator)
+      @evaluator = evaluator
+    end
 
-    def initialize(graph, root, content:, format:, backend: :ruby)
-      @backend = backend
-      @evaluator = if backend == :vm
-        VM::Evaluator.new(graph, root, content: content, format: format)
-      else
-        Internal::Evaluator.new(graph, root, content: content, format: format)
-      end
+    def backend
+      @evaluator.backend
     end
 
     def validate(instance)
