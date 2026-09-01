@@ -10,10 +10,10 @@ module Schemurai
     class Evaluator
       MISSING_SEGMENT = Object.new.freeze
 
-      def initialize(graph, root, content: false, format: false)
+      def initialize(graph, compiler, root, content: false, format: false)
         @graph = graph
-        @compiler = Compiler.new(graph)
-        @root = @compiler.compile(root)
+        @compiler = compiler
+        @root = root
         @validate_content = content
         @validate_format = format
         @regexps = nil

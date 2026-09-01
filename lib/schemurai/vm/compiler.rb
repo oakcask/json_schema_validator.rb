@@ -186,6 +186,11 @@ module Schemurai
         end
       end
 
+      def compile_all
+        @graph.nodes.each { |node| compile(node) }
+        self
+      end
+
       def resolve(program, reference)
         compile(@graph.resolve(program.node, reference))
       end

@@ -84,4 +84,29 @@ RSpec.describe "the VM backend" do
     expect(validator.valid?(1)).to be(true)
     expect(validator.valid?("text")).to be(false)
   end
+
+  it "compiles and shares one program graph for all validators", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
+    registry = Schemurai::SchemaRegistry.new(
+      schemas: {
+        "urn:wrapper" => {"$ref" => "urn:value"},
+        "urn:value" => {"type" => "integer"}
+      },
+      backend: :vm
+    )
+
+    registry.make_shareable
+    first = registry.validator_for("urn:wrapper")
+    second = registry.validator_for("urn:wrapper")
+    compiler = registry.instance_variable_get(:@compiler)
+    first_evaluator = first.instance_variable_get(:@evaluator)
+    second_evaluator = second.instance_variable_get(:@evaluator)
+
+    expect(compiler).to be_frozen
+    expect(Ractor.shareable?(compiler)).to be(true)
+    expect(first_evaluator.instance_variable_get(:@compiler)).to equal(compiler)
+    expect(second_evaluator.instance_variable_get(:@compiler)).to equal(compiler)
+    expect(first_evaluator.instance_variable_get(:@root)).to equal(second_evaluator.instance_variable_get(:@root))
+    expect(first.valid?(1)).to be(true)
+    expect(second.valid?("bad")).to be(false)
+  end
 end
