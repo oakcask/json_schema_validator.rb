@@ -3,7 +3,8 @@
 module Schemurai
   module Backend
     NATIVE_FEATURE = "schemurai/native"
-    CHOICES = %i[default ruby native].freeze
+    BYTECODE_FEATURE = "bytecode/evaluator"
+    CHOICES = %i[default ruby bytecode native].freeze
 
     module_function def requested
       value = ENV.fetch("SCHEMURAI_BACKEND", "default").to_sym
@@ -17,6 +18,7 @@ module Schemurai
       raise Error, "unknown Schemurai backend #{selection.inspect}" unless CHOICES.include?(selection)
 
       selection = production_default if selection == :default
+      load_bytecode! if selection == :bytecode
       load_native! if selection == :native
       selection
     end
@@ -32,6 +34,10 @@ module Schemurai
       true
     rescue LoadError
       false
+    end
+
+    module_function def load_bytecode!
+      require_relative BYTECODE_FEATURE
     end
 
     module_function def load_native!

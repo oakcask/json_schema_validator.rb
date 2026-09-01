@@ -25,6 +25,28 @@ env:
   BUNDLE_ONLY: default lint test
 
 jobs:
+  bytecode-differential:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        ruby-version: ["3.4", "4.0"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+          bundler-cache: true
+          cache-version: bytecode-${{ matrix.os }}-${{ matrix.ruby-version }}-${{ hashFiles('Gemfile.lock') }}
+      - name: Compare bytecode evaluator with the Ruby oracle
+        run: bundle exec rspec -Ilib test/evaluator_backend_test.rb
+        env:
+          SCHEMURAI_DIFFERENTIAL_BACKEND: bytecode
+          SCHEMURAI_NATIVE_LOADING: prohibited
+
   native-differential:
     strategy:
       fail-fast: false

@@ -53,7 +53,7 @@ order = {
 invalid_order = order.merge(
   "items" => [order.fetch("items").first.merge("quantity" => 0)]
 )
-%i[ruby native].each do |backend|
+%i[ruby bytecode native].each do |backend|
   validator = Schemurai.compile(schema, format: true, backend: backend)
   abort "expected the order to be valid with #{backend}" unless validator.valid?(order)
 

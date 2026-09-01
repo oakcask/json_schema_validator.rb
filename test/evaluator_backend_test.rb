@@ -30,4 +30,17 @@ RSpec.describe "the #{backend} evaluator" do
 
     expect(comparison).to be_empty
   end
+
+  it "runs with validators owned by independent Ractors", :aggregate_failures do
+    schema = {"type" => "array", "items" => {"type" => "integer"}}
+    registry = Schemurai::SchemaRegistry.new(schemas: {"urn:backend" => schema}, backend: backend)
+    registry.make_shareable
+    ractor = Ractor.new(registry) do |shared|
+      validator = shared.validator_for("urn:backend")
+      [validator.backend, validator.valid?([1]), validator.valid?(["bad"])]
+    end
+    result = ractor.respond_to?(:value) ? ractor.value : ractor.take
+
+    expect(result).to eq([backend, true, false])
+  end
 end
