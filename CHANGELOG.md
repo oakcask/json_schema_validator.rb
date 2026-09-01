@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.1.0](https://github.com/oakcask/schemurai/compare/v2.0.0...v2.1.0) (2026-09-01)
+
+
+### Features
+
+* improve validation error messages ([#77](https://github.com/oakcask/schemurai/issues/77)) ([48b992a](https://github.com/oakcask/schemurai/commit/48b992a1f752acd78c03f2e491eed1006ed5d9c0))
+
+
+### Bug Fixes
+
+* run release lockfile workflow on PR creation ([#79](https://github.com/oakcask/schemurai/issues/79)) ([aa8fbb0](https://github.com/oakcask/schemurai/commit/aa8fbb0a4b251278eee3c91aa433991ddb32e22d))
+
 ## [2.0.0](https://github.com/oakcask/schemurai/compare/v1.0.0...v2.0.0) (2026-09-01)
 
 
