@@ -75,16 +75,17 @@ module Schemurai
       else
         Internal::Evaluator.new(@graph, root, content: content, format: format)
       end
-      Validator.new(evaluator, backend: backend)
+      Validator.new(evaluator)
     end
   end
 
   class Validator
-    attr_reader :backend
-
-    def initialize(evaluator, backend: :ruby)
-      @backend = backend
+    def initialize(evaluator)
       @evaluator = evaluator
+    end
+
+    def backend
+      @evaluator.backend
     end
 
     def validate(instance)

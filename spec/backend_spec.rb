@@ -3,6 +3,15 @@
 require_relative "spec_helper"
 
 RSpec.describe "backend selection" do
+  it "gets the backend from the evaluator implementation" do
+    evaluator_class = Class.new do
+      def backend = :unused
+    end
+    evaluator = instance_double(evaluator_class, backend: :custom)
+
+    expect(Schemurai::Validator.new(evaluator).backend).to eq(:custom)
+  end
+
   it "makes selection and actual identity observable", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
     registry = Schemurai::SchemaRegistry.new(backend: :ruby)
     validator = registry.compile(true)

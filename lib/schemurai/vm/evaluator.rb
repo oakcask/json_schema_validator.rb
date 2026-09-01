@@ -10,6 +10,8 @@ module Schemurai
     class Evaluator
       MISSING_SEGMENT = Object.new.freeze
 
+      def backend = :vm
+
       def initialize(graph, compiler, root, content: false, format: false)
         @graph = graph
         @compiler = compiler

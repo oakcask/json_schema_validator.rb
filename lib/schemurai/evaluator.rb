@@ -9,6 +9,8 @@ module Schemurai
     class Evaluator
       MISSING_SEGMENT = Object.new.freeze
 
+      def backend = :ruby
+
       def initialize(graph, root, content: false, format: false)
         @validate_content = content
         @validate_format = format
