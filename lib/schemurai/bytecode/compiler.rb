@@ -49,6 +49,53 @@ module Schemurai
 
     ReferenceRules = Data.define(:value, :fragment)
 
+    StringRules = Data.define(
+      :max_length,
+      :has_max_length,
+      :min_length,
+      :has_min_length,
+      :pattern,
+      :has_pattern,
+      :format,
+      :format_assertion,
+      :content_encoding,
+      :content_media_type
+    )
+
+    ArrayRules = Data.define(
+      :max_items,
+      :has_max_items,
+      :min_items,
+      :has_min_items,
+      :unique,
+      :prefix_items,
+      :items,
+      :items_list,
+      :additional,
+      :contains,
+      :min_contains,
+      :max_contains,
+      :count_contains,
+      :unevaluated
+    )
+
+    ObjectRules = Data.define(
+      :max_properties,
+      :has_max_properties,
+      :min_properties,
+      :has_min_properties,
+      :required,
+      :has_required,
+      :properties,
+      :patterns,
+      :additional,
+      :property_names,
+      :dependencies,
+      :dependent_required,
+      :dependent_schemas,
+      :unevaluated
+    )
+
     class Program
       attr_reader :node, :code, :dynamic_anchor
 
@@ -64,7 +111,7 @@ module Schemurai
       def finish(code)
         @code = code.map(&:freeze).freeze
         @tracks_evaluation = code.any? do |instruction|
-          %i[array object].include?(instruction.first) && instruction[1][:unevaluated]
+          %i[array object].include?(instruction.first) && instruction[1].unevaluated
         end
         freeze
       end
@@ -174,18 +221,18 @@ module Schemurai
       end
 
       private def compile_string(node, schema)
-        {
-          max_length: schema["maxLength"],
-          has_max_length: schema.key?("maxLength"),
-          min_length: schema["minLength"],
-          has_min_length: schema.key?("minLength"),
-          pattern: snapshot(schema["pattern"]),
-          has_pattern: schema.key?("pattern"),
-          format: node.format,
-          format_assertion: node.dialect.format_assertion?,
-          content_encoding: snapshot(schema["contentEncoding"]),
-          content_media_type: snapshot(schema["contentMediaType"])
-        }.freeze
+        StringRules.new(
+          schema["maxLength"],
+          schema.key?("maxLength"),
+          schema["minLength"],
+          schema.key?("minLength"),
+          snapshot(schema["pattern"]),
+          schema.key?("pattern"),
+          node.format,
+          node.dialect.format_assertion?,
+          snapshot(schema["contentEncoding"]),
+          snapshot(schema["contentMediaType"])
+        )
       end
 
       private def compile_array(node, schema)
@@ -197,43 +244,43 @@ module Schemurai
         elsif !schema["items"].nil?
           compile(node.child("items"))
         end
-        {
-          max_items: schema["maxItems"],
-          has_max_items: schema.key?("maxItems"),
-          min_items: schema["minItems"],
-          has_min_items: schema.key?("minItems"),
-          unique: schema["uniqueItems"],
-          prefix_items: prefix_items,
-          items: items,
-          items_list: items.is_a?(Array),
-          additional: schema.key?("additionalItems") ? compile(node.child("additionalItems")) : nil,
-          contains: schema.key?("contains") ? compile(node.child("contains")) : nil,
-          min_contains: schema.fetch("minContains", 1),
-          max_contains: schema.fetch("maxContains", Float::INFINITY),
-          count_contains: node.dialect.keywords.key?("minContains"),
-          unevaluated: schema.key?("unevaluatedItems") ? compile(node.child("unevaluatedItems")) : nil
-        }.freeze
+        ArrayRules.new(
+          schema["maxItems"],
+          schema.key?("maxItems"),
+          schema["minItems"],
+          schema.key?("minItems"),
+          schema["uniqueItems"],
+          prefix_items,
+          items,
+          items.is_a?(Array),
+          schema.key?("additionalItems") ? compile(node.child("additionalItems")) : nil,
+          schema.key?("contains") ? compile(node.child("contains")) : nil,
+          schema.fetch("minContains", 1),
+          schema.fetch("maxContains", Float::INFINITY),
+          node.dialect.keywords.key?("minContains"),
+          schema.key?("unevaluatedItems") ? compile(node.child("unevaluatedItems")) : nil
+        )
       end
 
       private def compile_object(node, schema)
-        {
-          max_properties: schema["maxProperties"],
-          has_max_properties: schema.key?("maxProperties"),
-          min_properties: schema["minProperties"],
-          has_min_properties: schema.key?("minProperties"),
-          required: snapshot(schema["required"]),
-          has_required: schema.key?("required"),
-          properties: compile_map(node, schema, "properties"),
-          patterns: compile_map(node, schema, "patternProperties"),
-          additional: schema.key?("additionalProperties") ? compile(node.child("additionalProperties")) : nil,
-          property_names: schema.key?("propertyNames") ? compile(node.child("propertyNames")) : nil,
-          dependencies: compile_dependencies(node, schema),
-          dependent_required: schema.fetch("dependentRequired", {}).map do |name, required_names|
+        ObjectRules.new(
+          schema["maxProperties"],
+          schema.key?("maxProperties"),
+          schema["minProperties"],
+          schema.key?("minProperties"),
+          snapshot(schema["required"]),
+          schema.key?("required"),
+          compile_map(node, schema, "properties"),
+          compile_map(node, schema, "patternProperties"),
+          schema.key?("additionalProperties") ? compile(node.child("additionalProperties")) : nil,
+          schema.key?("propertyNames") ? compile(node.child("propertyNames")) : nil,
+          compile_dependencies(node, schema),
+          schema.fetch("dependentRequired", {}).map do |name, required_names|
             [snapshot(name), snapshot(required_names)].freeze
           end.freeze,
-          dependent_schemas: compile_map(node, schema, "dependentSchemas"),
-          unevaluated: schema.key?("unevaluatedProperties") ? compile(node.child("unevaluatedProperties")) : nil
-        }.freeze
+          compile_map(node, schema, "dependentSchemas"),
+          schema.key?("unevaluatedProperties") ? compile(node.child("unevaluatedProperties")) : nil
+        )
       end
 
       private def compile_map(node, schema, keyword)

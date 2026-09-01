@@ -15,7 +15,7 @@ RSpec.describe "the Ruby bytecode backend" do
     expect(program.code.map(&:first)).to eq(%i[type_object object])
     expect(program.code).to be_frozen
     expect(program.code).to all(be_frozen)
-    expect(object_rules.fetch(:properties).fetch("name").code.map(&:first)).to eq([:type_string])
+    expect(object_rules.properties.fetch("name").code.map(&:first)).to eq([:type_string])
   end
 
   it "executes the compiled program after the source schema changes", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
