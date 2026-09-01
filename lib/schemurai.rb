@@ -74,6 +74,8 @@ module Schemurai
       @backend = backend
       @evaluator = if backend == :native
         Native::Evaluator.new(graph, root, content: content, format: format)
+      elsif backend == :bytecode
+        Bytecode::Evaluator.new(graph, root, content: content, format: format)
       else
         Internal::Evaluator.new(graph, root, content: content, format: format)
       end
