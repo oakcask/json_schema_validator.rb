@@ -47,6 +47,8 @@ module Schemurai
       "string" => :type_string
     }.freeze
 
+    ReferenceRules = Data.define(:value, :fragment)
+
     class Program
       attr_reader :node, :code, :dynamic_anchor
 
@@ -101,11 +103,11 @@ module Schemurai
 
         code = []
         if schema.key?("$ref")
-          code << [:reference, "$ref", snapshot(schema["$ref"])]
+          code << [:ref, compile_reference(schema["$ref"])]
           return code unless node.dialect.ref_siblings?
         end
-        code << [:reference, "$recursiveRef", snapshot(schema["$recursiveRef"])] if schema.key?("$recursiveRef")
-        code << [:reference, "$dynamicRef", snapshot(schema["$dynamicRef"])] if schema.key?("$dynamicRef")
+        code << [:recursive_ref, compile_reference(schema["$recursiveRef"])] if schema.key?("$recursiveRef")
+        code << [:dynamic_ref, compile_reference(schema["$dynamicRef"])] if schema.key?("$dynamicRef")
 
         mask = node.keyword_mask
         categories = Schemurai.const_get(:Internal)::Dialect
@@ -155,6 +157,13 @@ module Schemurai
           exclusive_minimum: compile_decimal(schema["exclusiveMinimum"]),
           multiple_of: compile_decimal(schema["multipleOf"])
         )
+      end
+
+      private def compile_reference(reference)
+        value = snapshot(reference)
+        separator = value.index("#")
+        fragment = separator ? value[(separator + 1)..].freeze : nil
+        ReferenceRules.new(value: value, fragment: fragment)
       end
 
       private def compile_type(types)
