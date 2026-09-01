@@ -3,6 +3,7 @@ name: release / lockfile
 on:
   pull_request:
     types:
+      - opened
       - synchronize
 
 permissions:
