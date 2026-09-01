@@ -19,9 +19,8 @@ Gem::Specification.new do |spec|
     "source_code_uri" => "#{spec.homepage}/tree/main",
     "rubygems_mfa_required" => "true"
   }
-  spec.files = Dir["ext/**/*.{c,h,rb}", "lib/**/*", "README.md", "LICENSE"]
+  spec.files = Dir["lib/**/*", "README.md", "LICENSE"]
   spec.require_paths = ["lib"]
-  spec.extensions = ["ext/schemurai/extconf.rb"]
 
   spec.add_dependency "base64"
 end

@@ -1,7 +1,8 @@
 # Ruby oracle compatibility domain
 
-This document freezes the observable Ruby behavior that the native backend must
-match. The machine-readable companion is `oracle/compatibility_cases.json`.
+This document freezes the observable Ruby behavior that alternate evaluator
+backends must match. The machine-readable companion is
+`oracle/compatibility_cases.json`.
 
 ## Schema inputs
 
@@ -31,7 +32,7 @@ classes are outside the supported domain.
 The Ruby evaluator currently has observable behavior for selected values
 outside this domain. The fixtures explicitly freeze that behavior for core
 subclasses, singleton overrides, coercible numeric objects, mutation during
-iteration, and exceptional numeric methods. Native specialization may use a
+iteration, and exceptional numeric methods. Backend specialization may use a
 cold compatibility branch for those named fixtures, but no other behavior of
 arbitrary Ruby objects, monkey patches, or refinements is promised.
 

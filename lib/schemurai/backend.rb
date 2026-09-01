@@ -2,9 +2,8 @@
 
 module Schemurai
   module Backend
-    NATIVE_FEATURE = "schemurai/native"
     BYTECODE_FEATURE = "bytecode/evaluator"
-    CHOICES = %i[default ruby bytecode native].freeze
+    CHOICES = %i[default ruby bytecode].freeze
 
     module_function def requested
       value = ENV.fetch("SCHEMURAI_BACKEND", "default").to_sym
@@ -19,7 +18,6 @@ module Schemurai
 
       selection = production_default if selection == :default
       load_bytecode! if selection == :bytecode
-      load_native! if selection == :native
       selection
     end
 
@@ -27,34 +25,8 @@ module Schemurai
       :ruby
     end
 
-    module_function def native_available?
-      return false if native_loading_prohibited?
-
-      require NATIVE_FEATURE
-      true
-    rescue LoadError
-      false
-    end
-
     module_function def load_bytecode!
       require_relative BYTECODE_FEATURE
-    end
-
-    module_function def load_native!
-      if native_loading_prohibited?
-        raise LoadError, "native backend loading is prohibited by SCHEMURAI_NATIVE_LOADING"
-      end
-
-      require NATIVE_FEATURE
-      unless Schemurai::Native.const_defined?(:Evaluator, false)
-        raise LoadError, "native extension did not define Schemurai::Native::Evaluator"
-      end
-    rescue LoadError => error
-      raise LoadError, "native backend is unavailable: #{error.message}"
-    end
-
-    module_function def native_loading_prohibited?
-      ENV["SCHEMURAI_NATIVE_LOADING"] == "prohibited"
     end
   end
 end
