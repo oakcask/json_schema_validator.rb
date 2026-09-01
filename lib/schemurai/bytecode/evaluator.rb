@@ -243,40 +243,36 @@ module Schemurai
       end
 
       private def valid_number?(rules, value)
-        actual = nil
-        rules.fetch(:comparisons).each do |keyword, expected|
-          actual ||= decimal(value)
-          limit = decimal(expected)
-          valid = case keyword
-          when "maximum" then actual <= limit
-          when "minimum" then actual >= limit
-          when "exclusiveMaximum" then actual < limit
-          when "exclusiveMinimum" then actual > limit
-          end
-          return false unless valid
-        end
-        return true unless rules.fetch(:has_multiple_of)
+        mask = rules.mask
+        actual = decimal(value)
+        return false if (mask & MAXIMUM) != 0 && actual > rules.maximum
+        return false if (mask & MINIMUM) != 0 && actual < rules.minimum
+        return false if (mask & EXCLUSIVE_MAXIMUM) != 0 && actual >= rules.exclusive_maximum
+        return false if (mask & EXCLUSIVE_MINIMUM) != 0 && actual <= rules.exclusive_minimum
+        return true if (mask & MULTIPLE_OF).zero?
 
-        divisor = decimal(rules.fetch(:multiple_of))
-        divisor.positive? && (actual || decimal(value)).remainder(divisor).zero?
+        rules.multiple_of.positive? && actual.remainder(rules.multiple_of).zero?
       end
 
       private def check_number(rules, value)
-        rules.fetch(:comparisons).each do |keyword, expected|
-          actual = decimal(value)
-          limit = decimal(expected)
-          valid = case keyword
-          when "maximum" then actual <= limit
-          when "minimum" then actual >= limit
-          when "exclusiveMaximum" then actual < limit
-          when "exclusiveMinimum" then actual > limit
-          end
-          add_error(keyword, "numeric limit was exceeded") unless valid
+        mask = rules.mask
+        actual = decimal(value)
+        if (mask & MAXIMUM) != 0 && actual > rules.maximum
+          add_error("maximum", "numeric limit was exceeded")
         end
-        return unless rules.fetch(:has_multiple_of)
+        if (mask & MINIMUM) != 0 && actual < rules.minimum
+          add_error("minimum", "numeric limit was exceeded")
+        end
+        if (mask & EXCLUSIVE_MAXIMUM) != 0 && actual >= rules.exclusive_maximum
+          add_error("exclusiveMaximum", "numeric limit was exceeded")
+        end
+        if (mask & EXCLUSIVE_MINIMUM) != 0 && actual <= rules.exclusive_minimum
+          add_error("exclusiveMinimum", "numeric limit was exceeded")
+        end
+        return if (mask & MULTIPLE_OF).zero?
 
-        divisor = decimal(rules.fetch(:multiple_of))
-        valid = divisor.positive? && decimal(value).remainder(divisor).zero?
+        divisor = rules.multiple_of
+        valid = divisor.positive? && actual.remainder(divisor).zero?
         add_error("multipleOf", "number is not a multiple") unless valid
       end
 
