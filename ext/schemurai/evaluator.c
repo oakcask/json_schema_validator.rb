@@ -83,7 +83,7 @@ key(const char *name)
     if (!st_lookup(cached_strings, (st_data_t)name, &value)) {
         rb_raise(rb_eRuntimeError, "uncached native evaluator string: %s", name);
     }
-    return (VALUE)value;
+    return rb_ary_entry(cached_string_roots, (long)value);
 }
 
 static bool
@@ -1262,7 +1262,7 @@ initialize_cached_strings(void)
         VALUE string = rb_str_new_static(spec->bytes, spec->length);
         rb_obj_freeze(string);
         rb_ary_push(cached_string_roots, string);
-        st_insert(cached_strings, (st_data_t)spec->bytes, (st_data_t)string);
+        st_insert(cached_strings, (st_data_t)spec->bytes, (st_data_t)i);
     }
     rb_obj_freeze(cached_string_roots);
     rb_global_variable(&cached_string_roots);
