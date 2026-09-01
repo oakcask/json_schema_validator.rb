@@ -48,6 +48,7 @@ module Schemurai
         @external_schemas = schemas.dup
         @indexed_external_schemas = nil
         @compiled_roots = {}.compare_by_identity
+        @meta_schema_roots = {}
         @resources = {}
         @uri_registry = {}
         @nodes = []
@@ -72,6 +73,18 @@ module Schemurai
             compile_document(schema, base_uri.to_s, root_dialect, changes)
           end
         end
+      end
+
+      def meta_schema_root(schema)
+        SchemaDomain.validate!(schema)
+        uri = if schema.is_a?(Hash) && schema.key?("$schema")
+          schema["$schema"].to_s
+        else
+          @default_dialect.uri
+        end
+        root = (@meta_schema_roots[uri] ||= compile({"$ref" => uri}))
+        resolve(root, uri)
+        root
       end
 
       def resolve(node, reference)
@@ -337,9 +350,10 @@ module Schemurai
       private def index_external(document_uri, fallback_dialect)
         return if @indexed_external_schemas&.[](document_uri)
 
-        if (dialect = Dialect.resolve(document_uri)) && (meta_schema = MetaSchemas.resolve(document_uri))
+        if (meta_schema = MetaSchemas.resolve(document_uri))
+          dialect = Dialect.resolve(meta_schema["$schema"]) || fallback_dialect
           compile_atomically do |changes|
-            compile_document(meta_schema, dialect.uri, dialect, changes)
+            compile_document(meta_schema, document_uri, dialect, changes)
           end
           (@indexed_external_schemas ||= {})[document_uri] = true
           return

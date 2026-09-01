@@ -196,7 +196,7 @@ module Schemurai
         target = @compiler.resolve(program, rules.value)
         return target unless rules.fragment == "" && target.recursive_anchor?
 
-        dynamic = @dynamic_scope.filter_map do |resource|
+        dynamic = Array(@dynamic_scope).filter_map do |resource|
           root = resource.root
           compiled = @compiler.compile(root)
           compiled if compiled.recursive_anchor?
@@ -211,7 +211,7 @@ module Schemurai
 
         return target unless target.dynamic_anchor == fragment
 
-        @dynamic_scope.each do |resource|
+        Array(@dynamic_scope).each do |resource|
           dynamic = @graph.dynamic_anchor(resource, fragment)
           return @compiler.compile(dynamic) if dynamic
         end

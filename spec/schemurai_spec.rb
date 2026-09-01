@@ -74,14 +74,20 @@ RSpec.describe Schemurai do
 
   it "keeps implementation constants private" do
     expected = %i[
-      Error ResolutionError Result SchemaRegistry UnsupportedFormatError VERSION ValidationError Validator
+      Error InvalidSchemaError ResolutionError Result SchemaRegistry UnsupportedFormatError VERSION ValidationError Validator
     ]
     expect(described_class.constants(false)).to match_array(expected)
   end
 
-  it "exposes validator exceptions under one base error" do
-    error_classes = [described_class::Error, described_class::ResolutionError, described_class::UnsupportedFormatError]
-    expect(error_classes.map(&:superclass)).to eq([StandardError, described_class::Error, described_class::Error])
+  it "exposes validator exceptions under one base error" do # rubocop:disable RSpec/ExampleLength
+    error_classes = [
+      described_class::Error,
+      described_class::InvalidSchemaError,
+      described_class::ResolutionError,
+      described_class::UnsupportedFormatError
+    ]
+    expect(error_classes.map(&:superclass))
+      .to eq([StandardError, described_class::Error, described_class::Error, described_class::Error])
   end
 
   it "offers boolean and detailed validation APIs", :aggregate_failures do
@@ -123,6 +129,97 @@ RSpec.describe Schemurai do
     expect(validator.valid?(1)).to be(true)
     expect(validator.valid?("1")).to be(false)
     expect(validator.validate("1")).not_to be_valid
+  end
+
+  it "validates schemas against their declared meta-schema", :aggregate_failures do
+    schema = {"$schema" => "https://json-schema.org/draft/2020-12/schema", "type" => "invalid"}
+
+    result = described_class.validate_schema(schema)
+    expect(result).not_to be_valid
+    expect(result.errors.first).to have_attributes(instance_path: "/type", keyword: "anyOf")
+    expect(described_class.valid_schema?(schema)).to be(false)
+  end
+
+  it "validates nested schemas and modern keyword values", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
+    schemas = [
+      {
+        "$schema" => "https://json-schema.org/draft/2019-09/schema",
+        "properties" => {"value" => {"type" => "invalid"}}
+      },
+      {
+        "$schema" => "https://json-schema.org/draft/2020-12/schema",
+        "required" => "value"
+      }
+    ]
+
+    results = [:ruby, :vm].to_h do |backend|
+      [backend, schemas.map { |schema| described_class.valid_schema?(schema, backend: backend) }]
+    end
+    expect(results).to eq(ruby: [false, false], vm: [false, false])
+  end
+
+  it "uses Draft 7 to validate schemas without a dialect declaration", :aggregate_failures do
+    expect(described_class.valid_schema?({"type" => "integer"})).to be(true)
+    expect(described_class.valid_schema?({"type" => "invalid"})).to be(false)
+  end
+
+  it "keeps schema validation opt-in during compilation", :aggregate_failures do
+    schema = {"type" => "invalid"}
+
+    expect { described_class.compile(schema) }.not_to raise_error
+    expect { described_class.compile(schema, validate_schema: true) }
+      .to raise_error(described_class::InvalidSchemaError) { |error| expect(error.result).not_to be_valid }
+  end
+
+  it "applies the registry schema-validation option to every compiled schema", :aggregate_failures do
+    registry = described_class::SchemaRegistry.new(validate_schema: true)
+
+    expect(registry).to be_validate_schema
+    expect { registry.compile({"type" => "integer"}) }.not_to raise_error
+    expect { registry.compile({"type" => "invalid"}) }.to raise_error(described_class::InvalidSchemaError)
+  end
+
+  it "validates every registered external schema when creating a registry", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
+    valid_schemas = {"urn:valid" => {"type" => "integer"}}
+    invalid_schemas = {"urn:invalid" => {"type" => "invalid"}}
+
+    registry = described_class::SchemaRegistry.new(schemas: valid_schemas, validate_schema: true)
+    expect { registry.make_shareable }.not_to raise_error
+    expect do
+      described_class::SchemaRegistry.new(schemas: invalid_schemas, validate_schema: true)
+    end.to raise_error(described_class::InvalidSchemaError)
+  end
+
+  it "passes schema validation through the convenience validation APIs", :aggregate_failures do
+    schema = {"type" => "invalid"}
+
+    expect { described_class.validate(schema, 1, validate_schema: true) }
+      .to raise_error(described_class::InvalidSchemaError)
+    expect { described_class.valid?(schema, 1, validate_schema: true) }
+      .to raise_error(described_class::InvalidSchemaError)
+  end
+
+  it "uses registered custom meta-schemas", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
+    meta_schema_uri = "https://example.test/meta"
+    meta_schema = {
+      "$schema" => "https://json-schema.org/draft/2020-12/schema",
+      "$id" => meta_schema_uri,
+      "properties" => {"custom" => {"type" => "string"}}
+    }
+    schema = {"$schema" => meta_schema_uri, "custom" => 1}
+
+    result = described_class.validate_schema(schema, schemas: {meta_schema_uri => meta_schema})
+    expect(result).not_to be_valid
+    expect(result.errors.first).to have_attributes(instance_path: "/custom", keyword: "type")
+  end
+
+  it "rejects an unavailable declared meta-schema consistently across backends", :aggregate_failures do
+    schema = {"$schema" => "https://example.test/unavailable-meta-schema"}
+
+    [:ruby, :vm].each do |backend|
+      expect { described_class.validate_schema(schema, backend: backend) }
+        .to raise_error(described_class::ResolutionError, /unresolvable reference/)
+    end
   end
 
   it "reuses a validator after an instance method raises", :aggregate_failures do # rubocop:disable RSpec/ExampleLength

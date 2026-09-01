@@ -145,6 +145,35 @@ must not be shared between threads or Ractors. With the VM backend, the registry
 compiles and shares its bytecode before this transition, so those validators do
 not compile separate instruction streams in each Ractor.
 
+### Meta-schema validation
+
+Meta-schema validation is opt-in so ordinary compilation does not pay its
+additional time and memory cost. Set `validate_schema: true` when creating a
+`SchemaRegistry` to validate every schema registered through `schemas:` and
+every schema passed to `compile`. The convenience `compile`, `validate`, and
+`valid?` methods accept the same option and apply it to their internal registry.
+Schemas without `$schema` use the Draft 7 meta-schema. An invalid schema raises
+`Schemurai::InvalidSchemaError`, whose `result` contains the detailed validation
+errors.
+
+```ruby
+Schemurai.compile(schema, validate_schema: true)
+
+registry = Schemurai::SchemaRegistry.new(
+  schemas: external_schemas,
+  validate_schema: true
+)
+validator = registry.compile(schema)
+
+result = Schemurai.validate_schema(schema)
+result.valid? # whether the schema itself is valid
+```
+
+`SchemaRegistry#validate_schema` and `#valid_schema?` perform explicit checks
+regardless of the registry option and reuse meta-schema graph data within that
+registry. The stateful validator used for a check is temporary; no global
+validator is retained.
+
 ### Backend selection
 
 `Schemurai.backend`, `SchemaRegistry#backend`, and `Validator#backend` expose
