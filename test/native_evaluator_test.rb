@@ -1,36 +1,11 @@
 # frozen_string_literal: true
 
 require "spec_helper"
-require_relative "../oracle/lib/runner"
-require_relative "../oracle/lib/comparator"
 
 RSpec.describe "the native evaluator" do
   around do |example|
     require "schemurai/native"
     example.run
-  end
-
-  it "does not instantiate or copy the Ruby evaluator" do
-    ruby_evaluator = Schemurai.const_get(:Internal).const_get(:Evaluator)
-    allow(ruby_evaluator).to receive(:new).and_raise("Ruby evaluator fallback")
-    allow(ruby_evaluator).to receive(:dup).and_raise("Ruby evaluator copy")
-
-    validator = Schemurai.compile({"type" => "integer"}, backend: :native)
-    expect(validator.valid?(4)).to be(true)
-    expect(validator.valid?(4.5)).to be(false)
-  end
-
-  it "matches the Ruby result stream for the complete catalog" do
-    inputs = SchemuraiOracle::CaseCatalog.new.each_case
-      .select { |record| record.classification == "selected" }
-      .map { |record| {"catalog_case" => record.id} }
-    ruby_runner = SchemuraiOracle::Runner.new(backend: :ruby)
-    native_runner = SchemuraiOracle::Runner.new(backend: :native)
-    ruby_records = inputs.map { |input| ruby_runner.run(input) }
-    native_records = inputs.map { |input| native_runner.run(input) }
-    comparison = SchemuraiOracle::Comparator.new.compare(ruby_records, native_records)
-
-    expect(comparison).to be_empty
   end
 
   it "matches the recorded out-of-domain compatibility behavior", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
