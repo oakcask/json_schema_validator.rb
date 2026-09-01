@@ -17,9 +17,17 @@ Gem::Specification.new do |spec|
   spec.metadata = {
     "homepage_uri" => spec.homepage,
     "source_code_uri" => "#{spec.homepage}/tree/main",
+    "documentation_uri" => "https://rubydoc.info/gems/#{spec.name}/#{spec.version}",
     "rubygems_mfa_required" => "true"
   }
   spec.files = Dir["lib/**/*", "README.md", "LICENSE"]
+  spec.extra_rdoc_files = %w[README.md LICENSE]
+  spec.rdoc_options = [
+    "--main", "README.md",
+    "--title", "Schemurai API Documentation",
+    "--visibility", "public",
+    "--exclude", "lib/schemurai/(?!version\\.rb)"
+  ]
   spec.require_paths = ["lib"]
 
   spec.add_dependency "base64"

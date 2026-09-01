@@ -13,6 +13,11 @@ group :lint do
   gem "rubocop-rspec", require: false
 end
 
+group :documentation do
+  gem "rake", require: false
+  gem "rdoc", require: false
+end
+
 group :benchmark do
   gem "benchmark-ips", require: false
   gem "json-schema", path: "references/json-schema", require: false
