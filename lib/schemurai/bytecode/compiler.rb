@@ -2,6 +2,21 @@
 
 module Schemurai
   module Bytecode
+    NumberRules = Data.define(
+      :mask,
+      :maximum,
+      :minimum,
+      :exclusive_maximum,
+      :exclusive_minimum,
+      :multiple_of
+    )
+
+    MAXIMUM = 1 << 0
+    MINIMUM = 1 << 1
+    EXCLUSIVE_MAXIMUM = 1 << 2
+    EXCLUSIVE_MINIMUM = 1 << 3
+    MULTIPLE_OF = 1 << 4
+
     class Program
       attr_reader :node, :code, :dynamic_anchor
 
@@ -96,14 +111,20 @@ module Schemurai
       end
 
       private def compile_number(schema)
-        comparisons = %w[maximum minimum exclusiveMaximum exclusiveMinimum].filter_map do |keyword|
-          [keyword, snapshot(schema[keyword])].freeze if schema.key?(keyword)
-        end
-        {
-          comparisons: comparisons.freeze,
-          multiple_of: snapshot(schema["multipleOf"]),
-          has_multiple_of: schema.key?("multipleOf")
-        }.freeze
+        mask = 0
+        mask |= MAXIMUM if schema.key?("maximum")
+        mask |= MINIMUM if schema.key?("minimum")
+        mask |= EXCLUSIVE_MAXIMUM if schema.key?("exclusiveMaximum")
+        mask |= EXCLUSIVE_MINIMUM if schema.key?("exclusiveMinimum")
+        mask |= MULTIPLE_OF if schema.key?("multipleOf")
+        NumberRules.new(
+          mask: mask,
+          maximum: compile_decimal(schema["maximum"]),
+          minimum: compile_decimal(schema["minimum"]),
+          exclusive_maximum: compile_decimal(schema["exclusiveMaximum"]),
+          exclusive_minimum: compile_decimal(schema["exclusiveMinimum"]),
+          multiple_of: compile_decimal(schema["multipleOf"])
+        )
       end
 
       private def compile_string(node, schema)
@@ -193,6 +214,12 @@ module Schemurai
         else
           value
         end
+      end
+
+      private def compile_decimal(value)
+        return value if value.nil? || value.is_a?(Integer) || value.is_a?(Rational)
+
+        Rational(value.to_s)
       end
     end
   end
