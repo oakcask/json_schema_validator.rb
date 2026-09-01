@@ -37,7 +37,6 @@ module Schemurai
 
       private def prepare_evaluation(paths:)
         @error_count = 0
-        @track_dynamic_scope = @graph.dynamic_scope?
         @dynamic_scope = nil
         @instance_path = paths ? [] : nil
         @schema_path = paths ? [] : nil
@@ -177,7 +176,7 @@ module Schemurai
       end
 
       private def enter_scope(program)
-        return false unless @track_dynamic_scope
+        return false unless program.tracks_dynamic_scope?
         return false if @dynamic_scope&.last.equal?(program.node.resource)
 
         (@dynamic_scope ||= []) << program.node.resource
