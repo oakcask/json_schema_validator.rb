@@ -97,8 +97,11 @@ module Schemurai
           when :not
             return false if evaluate_valid(operand, instance)
           when :conditional
-            branch = evaluate_valid(operand.fetch(:if), instance) ? :then : :else
-            return false if operand.key?(branch) && !evaluate_valid(operand.fetch(branch), instance)
+            if evaluate_valid(operand.condition, instance)
+              return false if operand.has_then && !evaluate_valid(operand.then_branch, instance)
+            elsif operand.has_else && !evaluate_valid(operand.else_branch, instance)
+              return false
+            end
           when :number
             return false if instance.is_a?(Numeric) && !instance.is_a?(Complex) && !valid_number?(operand, instance)
           when :string
@@ -366,20 +369,20 @@ module Schemurai
       end
 
       private def valid_content?(rules, value)
-        decoded = (rules.content_encoding == "base64") ? Base64.strict_decode64(value) : value
-        JSON.parse(decoded) if rules.content_media_type == "application/json"
+        decoded = rules.decode_base64 ? Base64.strict_decode64(value) : value
+        JSON.parse(decoded) if rules.parse_json
         true
       rescue ArgumentError, JSON::ParserError
         false
       end
 
       private def check_content(rules, value)
-        decoded = (rules.content_encoding == "base64") ? Base64.strict_decode64(value) : value
-        return unless rules.content_media_type == "application/json"
+        decoded = rules.decode_base64 ? Base64.strict_decode64(value) : value
+        return unless rules.parse_json
 
         JSON.parse(decoded)
       rescue ArgumentError, JSON::ParserError
-        keyword = (rules.content_encoding == "base64") ? "contentEncoding" : "contentMediaType"
+        keyword = rules.decode_base64 ? "contentEncoding" : "contentMediaType"
         add_error(keyword, "string content is invalid")
       end
 
@@ -645,11 +648,12 @@ module Schemurai
         when :not
           add_error("not", "subschema matched") if trial_at(operand, value, MISSING_SEGMENT, "not").valid?
         when :conditional
-          condition = trial_at(operand.fetch(:if), value, MISSING_SEGMENT, "if")
-          branch = condition.valid? ? :then : :else
+          condition = trial_at(operand.condition, value, MISSING_SEGMENT, "if")
           evaluation = evaluation.merge(condition) if condition.valid?
-          if operand.key?(branch)
-            evaluation = evaluation.merge(evaluate_at(operand.fetch(branch), value, MISSING_SEGMENT, branch.to_s))
+          if condition.valid? && operand.has_then
+            evaluation = evaluation.merge(evaluate_at(operand.then_branch, value, MISSING_SEGMENT, "then"))
+          elsif !condition.valid? && operand.has_else
+            evaluation = evaluation.merge(evaluate_at(operand.else_branch, value, MISSING_SEGMENT, "else"))
           end
         end
         evaluation
