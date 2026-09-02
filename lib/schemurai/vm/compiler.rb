@@ -30,6 +30,16 @@ module Schemurai
     TRACKS_EVALUATION = 1 << 0
     TRACKS_DYNAMIC_SCOPE = 1 << 1
 
+    DIALECT = Schemurai.const_get(:Internal)::Dialect
+    KEYWORD_TYPE = DIALECT::TYPE
+    KEYWORD_ENUM = DIALECT::ENUM
+    KEYWORD_COMBINER = DIALECT::COMBINER
+    KEYWORD_NUMBER = DIALECT::NUMBER
+    KEYWORD_STRING = DIALECT::STRING
+    KEYWORD_ARRAY = DIALECT::ARRAY
+    KEYWORD_OBJECT = DIALECT::OBJECT
+    private_constant :DIALECT
+
     TYPE_BITS = {
       "null" => TYPE_NULL,
       "boolean" => TYPE_BOOLEAN,
@@ -105,22 +115,25 @@ module Schemurai
         @tracks_evaluation = false
         @tracks_dynamic_scope = false
         schema = node.schema
-        @recursive_anchor = schema.is_a?(Hash) && schema["$recursiveAnchor"] == true
-        @dynamic_anchor = if schema.is_a?(Hash) && schema["$dynamicAnchor"].is_a?(String)
-          schema["$dynamicAnchor"].dup.freeze
+        if schema.instance_of?(Hash)
+          @recursive_anchor = schema["$recursiveAnchor"] == true
+          dynamic_anchor = schema["$dynamicAnchor"]
+          @dynamic_anchor = -dynamic_anchor if dynamic_anchor.instance_of?(String)
+        else
+          @recursive_anchor = false
         end
       end
 
       def emit(code, opcode, operand)
-        unless @tracks_evaluation
-          case opcode
-          when :array, :object, :typed_array, :typed_object
-            @tracks_evaluation = operand.unevaluated
-          end
-        end
-        @tracks_dynamic_scope ||= opcode == :ref || opcode == :recursive_ref || opcode == :dynamic_ref ||
-          dynamic_scope_operand?(operand)
         code.push(opcode, operand)
+      end
+
+      def track_evaluation!
+        @tracks_evaluation = true
+      end
+
+      def track_dynamic_scope!
+        @tracks_dynamic_scope = true
       end
 
       def finish(code)
@@ -143,38 +156,6 @@ module Schemurai
       def tracks_dynamic_scope?
         @tracks_dynamic_scope
       end
-
-      private def dynamic_scope_operand?(operand)
-        case operand
-        when Program
-          operand.tracks_dynamic_scope?
-        when Array
-          operand.any? { |item| dynamic_scope_operand?(item) }
-        when Hash
-          operand.each_value { |item| return true if dynamic_scope_operand?(item) }
-          false
-        when ArrayRules
-          dynamic_scope_operand?(operand.prefix_items) ||
-            dynamic_scope_operand?(operand.items) ||
-            dynamic_scope_operand?(operand.additional) ||
-            dynamic_scope_operand?(operand.contains) ||
-            dynamic_scope_operand?(operand.unevaluated)
-        when ObjectRules
-          dynamic_scope_operand?(operand.properties) ||
-            dynamic_scope_operand?(operand.patterns) ||
-            dynamic_scope_operand?(operand.additional) ||
-            dynamic_scope_operand?(operand.property_names) ||
-            dynamic_scope_operand?(operand.dependencies) ||
-            dynamic_scope_operand?(operand.dependent_schemas) ||
-            dynamic_scope_operand?(operand.unevaluated)
-        when ConditionalRules
-          dynamic_scope_operand?(operand.condition) ||
-            dynamic_scope_operand?(operand.then_branch) ||
-            dynamic_scope_operand?(operand.else_branch)
-        else
-          false
-        end
-      end
     end
 
     class Compiler
@@ -184,11 +165,12 @@ module Schemurai
       end
 
       def compile(node)
-        @programs.fetch(node) do
-          program = Program.new(node)
-          @programs[node] = program
-          program.finish(compile_code(node, program))
-        end
+        program = @programs[node]
+        return program if program
+
+        program = Program.new(node)
+        @programs[node] = program
+        program.finish(compile_code(node, program))
       end
 
       def compile_all
@@ -200,33 +182,53 @@ module Schemurai
         compile(@graph.resolve(program.node, reference))
       end
 
+      private def compile_child(node, parent)
+        child = compile(node)
+        parent.track_dynamic_scope! if child.tracks_dynamic_scope?
+        child
+      end
+
       private def compile_code(node, program)
         schema = node.schema
-        return program.emit([0], :boolean, schema) if schema == true || schema == false
+        return program.emit([0], :boolean, schema) if schema.equal?(true) || schema.equal?(false)
         return [0] unless schema.is_a?(Hash)
 
         code = [0]
         if schema.key?("$ref")
+          program.track_dynamic_scope!
           program.emit(code, :ref, compile_reference(schema["$ref"]))
           return code unless node.dialect.ref_siblings?
         end
-        program.emit(code, :recursive_ref, compile_reference(schema["$recursiveRef"])) if schema.key?("$recursiveRef")
-        program.emit(code, :dynamic_ref, compile_reference(schema["$dynamicRef"])) if schema.key?("$dynamicRef")
+        if schema.key?("$recursiveRef")
+          program.track_dynamic_scope!
+          program.emit(code, :recursive_ref, compile_reference(schema["$recursiveRef"]))
+        end
+        if schema.key?("$dynamicRef")
+          program.track_dynamic_scope!
+          program.emit(code, :dynamic_ref, compile_reference(schema["$dynamicRef"]))
+        end
 
         mask = node.keyword_mask
-        categories = Schemurai.const_get(:Internal)::Dialect
-        compile_type(code, program, schema["type"]) if (mask & categories::TYPE) != 0 && schema.key?("type")
-        if (mask & categories::ENUM) != 0
+        compile_type(code, program, schema["type"]) if (mask & KEYWORD_TYPE) != 0 && schema.key?("type")
+        if (mask & KEYWORD_ENUM) != 0
           program.emit(code, :enum, snapshot(schema["enum"])) if schema.key?("enum")
           program.emit(code, :const, snapshot(schema["const"])) if schema.key?("const")
         end
-        compile_combiners(code, program, node, schema) if (mask & categories::COMBINER) != 0
-        program.emit(code, :number, compile_number(schema)) if (mask & categories::NUMBER) != 0
-        if (mask & categories::STRING) != 0 || node.format
+        compile_combiners(code, program, node, schema) if (mask & KEYWORD_COMBINER) != 0
+        program.emit(code, :number, compile_number(schema)) if (mask & KEYWORD_NUMBER) != 0
+        if (mask & KEYWORD_STRING) != 0 || node.format
           program.emit(code, :string, compile_string(node, schema))
         end
-        program.emit(code, :array, compile_array(node, schema)) if (mask & categories::ARRAY) != 0
-        program.emit(code, :object, compile_object(node, schema)) if (mask & categories::OBJECT) != 0
+        if (mask & KEYWORD_ARRAY) != 0
+          rules = compile_array(node, schema, program)
+          program.track_evaluation! if rules.unevaluated
+          program.emit(code, :array, rules)
+        end
+        if (mask & KEYWORD_OBJECT) != 0
+          rules = compile_object(node, schema, program)
+          program.track_evaluation! if rules.unevaluated
+          program.emit(code, :object, rules)
+        end
         fuse_type_instruction(code)
       end
 
@@ -257,19 +259,21 @@ module Schemurai
         %w[allOf anyOf oneOf].each do |keyword|
           next unless schema.key?(keyword)
 
-          children = schema[keyword].each_index.map { |index| compile(node.child(keyword, index)) }
+          children = schema[keyword].each_index.map do |index|
+            compile_child(node.child(keyword, index), program)
+          end
           program.emit(code, keyword.to_sym, children)
         end
-        program.emit(code, :not, compile(node.child("not"))) if schema.key?("not")
+        program.emit(code, :not, compile_child(node.child("not"), program)) if schema.key?("not")
         return unless schema.key?("if")
 
         program.emit(
           code,
           :conditional,
           ConditionalRules.new(
-            compile(node.child("if")),
-            schema.key?("then") ? compile(node.child("then")) : nil,
-            schema.key?("else") ? compile(node.child("else")) : nil
+            compile_child(node.child("if"), program),
+            schema.key?("then") ? compile_child(node.child("then"), program) : nil,
+            schema.key?("else") ? compile_child(node.child("else"), program) : nil
           )
         )
       end
@@ -282,27 +286,27 @@ module Schemurai
         mask |= EXCLUSIVE_MINIMUM if schema.key?("exclusiveMinimum")
         mask |= MULTIPLE_OF if schema.key?("multipleOf")
         NumberRules.new(
-          mask: mask,
-          maximum: compile_decimal(schema["maximum"]),
-          minimum: compile_decimal(schema["minimum"]),
-          exclusive_maximum: compile_decimal(schema["exclusiveMaximum"]),
-          exclusive_minimum: compile_decimal(schema["exclusiveMinimum"]),
-          multiple_of: compile_decimal(schema["multipleOf"])
+          mask,
+          compile_decimal(schema["maximum"]),
+          compile_decimal(schema["minimum"]),
+          compile_decimal(schema["exclusiveMaximum"]),
+          compile_decimal(schema["exclusiveMinimum"]),
+          compile_decimal(schema["multipleOf"])
         )
       end
 
       private def compile_reference(reference)
         value = snapshot(reference)
         separator = value.index("#")
-        fragment = separator ? value[(separator + 1)..].freeze : nil
-        ReferenceRules.new(value: value, fragment: fragment)
+        fragment = separator ? -value[(separator + 1)..] : nil
+        ReferenceRules.new(value, fragment)
       end
 
       private def compile_type(code, program, types)
         return program.emit(code, TYPE_OPCODES.fetch(types), nil) unless types.is_a?(Array)
 
         mask = types.reduce(0) { |result, type| result | TYPE_BITS.fetch(type) }
-        program.emit(code, :types, TypeRules.new(mask: mask, names: snapshot(types)))
+        program.emit(code, :types, TypeRules.new(mask, snapshot(types)))
       end
 
       private def compile_string(node, schema)
@@ -317,14 +321,18 @@ module Schemurai
         )
       end
 
-      private def compile_array(node, schema)
+      private def compile_array(node, schema, program)
         prefix_items = if schema["prefixItems"].is_a?(Array)
-          schema["prefixItems"].each_index.map { |index| compile(node.child("prefixItems", index)) }.freeze
+          schema["prefixItems"].each_index.map do |index|
+            compile_child(node.child("prefixItems", index), program)
+          end.freeze
         end
         items = if schema["items"].is_a?(Array)
-          schema["items"].each_index.map { |index| compile(node.child("items", index)) }.freeze
+          schema["items"].each_index.map do |index|
+            compile_child(node.child("items", index), program)
+          end.freeze
         elsif !schema["items"].nil?
-          compile(node.child("items"))
+          compile_child(node.child("items"), program)
         end
         ArrayRules.new(
           schema["maxItems"],
@@ -333,47 +341,51 @@ module Schemurai
           prefix_items,
           items,
           items.is_a?(Array),
-          schema.key?("additionalItems") ? compile(node.child("additionalItems")) : nil,
-          schema.key?("contains") ? compile(node.child("contains")) : nil,
+          schema.key?("additionalItems") ? compile_child(node.child("additionalItems"), program) : nil,
+          schema.key?("contains") ? compile_child(node.child("contains"), program) : nil,
           schema.fetch("minContains", 1),
           schema.fetch("maxContains", Float::INFINITY),
           node.dialect.keywords.key?("minContains"),
-          schema.key?("unevaluatedItems") ? compile(node.child("unevaluatedItems")) : nil
+          schema.key?("unevaluatedItems") ? compile_child(node.child("unevaluatedItems"), program) : nil
         )
       end
 
-      private def compile_object(node, schema)
+      private def compile_object(node, schema, program)
         ObjectRules.new(
           schema["maxProperties"],
           schema["minProperties"],
           snapshot(schema["required"]),
-          compile_map(node, schema, "properties"),
-          compile_optional_map(node, schema, "patternProperties"),
-          schema.key?("additionalProperties") ? compile(node.child("additionalProperties")) : nil,
-          schema.key?("propertyNames") ? compile(node.child("propertyNames")) : nil,
-          compile_dependencies(node, schema),
+          compile_map(node, schema, "properties", program),
+          compile_optional_map(node, schema, "patternProperties", program),
+          schema.key?("additionalProperties") ? compile_child(node.child("additionalProperties"), program) : nil,
+          schema.key?("propertyNames") ? compile_child(node.child("propertyNames"), program) : nil,
+          compile_dependencies(node, schema, program),
           schema.fetch("dependentRequired", {}).map do |name, required_names|
             [snapshot(name), snapshot(required_names)].freeze
           end.then { |entries| entries.empty? ? nil : entries.freeze },
-          compile_optional_map(node, schema, "dependentSchemas"),
-          schema.key?("unevaluatedProperties") ? compile(node.child("unevaluatedProperties")) : nil
+          compile_optional_map(node, schema, "dependentSchemas", program),
+          schema.key?("unevaluatedProperties") ? compile_child(node.child("unevaluatedProperties"), program) : nil
         )
       end
 
-      private def compile_map(node, schema, keyword)
+      private def compile_map(node, schema, keyword, program)
         schema.fetch(keyword, {}).each_key.to_h do |name|
-          [snapshot(name), compile(node.child(keyword, name))]
+          [snapshot(name), compile_child(node.child(keyword, name), program)]
         end.freeze
       end
 
-      private def compile_optional_map(node, schema, keyword)
-        compiled = compile_map(node, schema, keyword)
+      private def compile_optional_map(node, schema, keyword, program)
+        compiled = compile_map(node, schema, keyword, program)
         compiled unless compiled.empty?
       end
 
-      private def compile_dependencies(node, schema)
+      private def compile_dependencies(node, schema, program)
         compiled = schema.fetch("dependencies", {}).map do |name, dependency|
-          compiled = dependency.is_a?(Array) ? snapshot(dependency) : compile(node.child("dependencies", name))
+          compiled = if dependency.is_a?(Array)
+            snapshot(dependency)
+          else
+            compile_child(node.child("dependencies", name), program)
+          end
           [snapshot(name), compiled].freeze
         end
         compiled.freeze unless compiled.empty?
@@ -386,7 +398,7 @@ module Schemurai
         when Array
           value.map { |item| snapshot(item) }.freeze
         when String
-          value.dup.freeze
+          -value
         else
           value
         end

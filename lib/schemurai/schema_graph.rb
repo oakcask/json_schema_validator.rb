@@ -13,6 +13,44 @@ require_relative "schema_domain"
 module Schemurai
   module Internal
     class SchemaGraph
+      class CompilationChanges
+        EMPTY_HASH = {}.freeze
+        EMPTY_ARRAY = [].freeze
+
+        attr_reader :nodes
+        attr_accessor :requires_dynamic_scope
+
+        def initialize
+          @nodes = []
+          @requires_dynamic_scope = false
+        end
+
+        def resources = @resources || EMPTY_HASH
+        def mutable_resources = (@resources ||= {})
+
+        def resource_nodes = @resource_nodes || EMPTY_HASH
+        def mutable_resource_nodes = (@resource_nodes ||= {})
+
+        def uri_registry = @uri_registry || EMPTY_HASH
+        def mutable_uri_registry = (@uri_registry ||= {})
+
+        def dynamic_anchors = @dynamic_anchors || EMPTY_HASH
+        def mutable_dynamic_anchors = (@dynamic_anchors ||= {})
+
+        def custom_dialects = @custom_dialects || EMPTY_HASH
+        def mutable_custom_dialects = (@custom_dialects ||= {})
+
+        def document_locations
+          @document_locations || EMPTY_ARRAY
+        end
+
+        def mutable_document_locations
+          @document_locations ||= []
+        end
+      end
+
+      private_constant :CompilationChanges
+
       class Resource
         attr_reader :uri, :root
 
@@ -65,13 +103,15 @@ module Schemurai
 
       def compile(schema, base_uri: nil, dialect: @default_dialect)
         SchemaDomain.validate!(schema)
-        roots = @compiled_roots.fetch(schema) { @compiled_roots[schema] = {} }
-        cache_key = [base_uri.to_s, dialect]
-        roots.fetch(cache_key) do
-          roots[cache_key] = compile_atomically do |changes|
-            root_dialect = dialect_for(schema, dialect, changes)
-            compile_document(schema, base_uri.to_s, root_dialect, changes)
-          end
+        roots = (@compiled_roots[schema] ||= {})
+        base_uri = base_uri.to_s
+        cache_key = [base_uri, dialect]
+        root = roots[cache_key]
+        return root if root
+
+        roots[cache_key] = compile_atomically do |changes|
+          root_dialect = dialect_for(schema, dialect, changes)
+          compile_document(schema, base_uri, root_dialect, changes)
         end
       end
 
@@ -132,16 +172,7 @@ module Schemurai
       end
 
       private def compilation_changes
-        {
-          resources: {},
-          resource_nodes: {},
-          uri_registry: {},
-          nodes: [],
-          document_locations: [],
-          dynamic_anchors: {},
-          custom_dialects: {},
-          requires_dynamic_scope: false
-        }
+        CompilationChanges.new
       end
 
       private def compile_atomically
@@ -152,22 +183,22 @@ module Schemurai
       end
 
       private def commit(changes)
-        resources.update(changes[:resources])
-        changes[:resource_nodes].each do |resource, resource_nodes|
+        resources.update(changes.resources)
+        changes.resource_nodes.each do |resource, resource_nodes|
           resource_nodes.each_value { |node| resource.add(node) }
         end
-        uri_registry.update(changes[:uri_registry])
-        nodes.concat(changes[:nodes])
+        uri_registry.update(changes.uri_registry)
+        nodes.concat(changes.nodes)
         if @nodes_by_document_location
-          changes[:document_locations].each do |document_key, schema_path, node|
+          changes.document_locations.each do |document_key, schema_path, node|
             (@nodes_by_document_location[document_key] ||= {})[schema_path] = node
           end
         end
-        changes[:dynamic_anchors].each do |resource, anchors|
+        changes.dynamic_anchors.each do |resource, anchors|
           (@dynamic_anchors[resource] ||= {}).update(anchors)
         end
-        (@custom_dialects ||= {}).update(changes[:custom_dialects]) unless changes[:custom_dialects].empty?
-        @dynamic_scope = true if changes[:requires_dynamic_scope]
+        (@custom_dialects ||= {}).update(changes.custom_dialects) unless changes.custom_dialects.empty?
+        @dynamic_scope = true if changes.requires_dynamic_scope
       end
 
       private def resolve_uncached(node, reference)
@@ -236,7 +267,7 @@ module Schemurai
       private def compile_node(schema, inherited_base, dialect, schema_path, resource_path, resource, document_key, changes)
         hash_schema = schema.is_a?(Hash)
         if hash_schema && (schema.key?("$recursiveRef") || schema.key?("$dynamicRef"))
-          changes[:requires_dynamic_scope] = true
+          changes.requires_dynamic_scope = true
         end
         dialect = dialect_for(schema, dialect, changes) if hash_schema && schema.key?("$schema")
         if hash_schema && dialect.format_assertion? && schema.key?("format") &&
@@ -263,11 +294,13 @@ module Schemurai
           resource_path: resource_path,
           document_key: document_key
         )
-        changes[:nodes] << node
-        changes[:document_locations] << [document_key, schema_path, node]
+        changes.nodes << node
+        if @nodes_by_document_location
+          changes.mutable_document_locations << [document_key, schema_path, node]
+        end
 
         if hash_schema && schema.key?("$id") && !exclusive_ref && !base.empty?
-          changes[:uri_registry][base] = node
+          changes.mutable_uri_registry[base] = node
           if starts_resource
             resource = register_resource(strip_fragment(base), node, changes)
           end
@@ -276,7 +309,7 @@ module Schemurai
         resource ||= register_resource(strip_fragment(base), node, changes)
         unless node.resource
           node.resource = resource
-          (changes[:resource_nodes][resource] ||= {})[node.resource_path] = node unless node.equal?(resource.root)
+          (changes.mutable_resource_nodes[resource] ||= {})[node.resource_path] = node unless node.equal?(resource.root)
         end
 
         if hash_schema && !exclusive_ref
@@ -315,24 +348,24 @@ module Schemurai
         return resource if resource && resource.root.equal?(root)
         return resource if resource
 
-        changes[:resources][uri] = Resource.new(uri, root)
+        changes.mutable_resources[uri] = Resource.new(uri, root)
       end
 
       private def resource_at(uri, changes)
-        changes[:resources].fetch(uri) { resources[uri] }
+        changes.resources.fetch(uri) { resources[uri] }
       end
 
       private def register_uri_unless_present(uri, node, changes)
-        return if changes[:uri_registry].key?(uri) || uri_registry.key?(uri)
+        return if changes.uri_registry.key?(uri) || uri_registry.key?(uri)
 
-        changes[:uri_registry][uri] = node
+        changes.mutable_uri_registry[uri] = node
       end
 
       private def register_anchor(node, resource, name, changes, dynamic: false)
         return unless name.is_a?(String) && !name.empty?
 
-        changes[:uri_registry]["#{resource.uri}##{name}"] = node
-        ((changes[:dynamic_anchors][resource] ||= {})[name] = node) if dynamic
+        changes.mutable_uri_registry["#{resource.uri}##{name}"] = node
+        ((changes.mutable_dynamic_anchors[resource] ||= {})[name] = node) if dynamic
       end
 
       private def node_by_document_location(document_key, schema_path)
@@ -392,7 +425,7 @@ module Schemurai
         meta_schema = @external_schemas[uri] || @external_schemas[uri.delete_suffix("#")]
         return unless meta_schema.is_a?(Hash) && meta_schema["$vocabulary"].is_a?(Hash)
 
-        custom_dialects = changes ? changes[:custom_dialects] : (@custom_dialects ||= {})
+        custom_dialects = changes ? changes.mutable_custom_dialects : (@custom_dialects ||= {})
         return custom_dialects[uri] if custom_dialects.key?(uri)
         return @custom_dialects[uri] if @custom_dialects&.key?(uri)
 
