@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.2.0](https://github.com/oakcask/schemurai/compare/v2.1.0...v2.2.0) (2026-09-02)
+
+
+### Features
+
+* ship public RBS signatures ([#82](https://github.com/oakcask/schemurai/issues/82)) ([6b1295e](https://github.com/oakcask/schemurai/commit/6b1295ee35643893fa935a3f153e8ff04bcddc9b))
+
+
+### Performance Improvements
+
+* accelerate VM annotation evaluation ([#85](https://github.com/oakcask/schemurai/issues/85)) ([d128b94](https://github.com/oakcask/schemurai/commit/d128b9498aff4d164915c7febcf701284b7c0780))
+* consolidate VM rule presence fields ([c0f3426](https://github.com/oakcask/schemurai/commit/c0f342606b6121946eed42cb11c34887d3e85c95))
+* emit VM instructions directly ([#88](https://github.com/oakcask/schemurai/issues/88)) ([793a4f7](https://github.com/oakcask/schemurai/commit/793a4f70d7c5a9b94db1469c4cfb80d6b8ccf2f6))
+* improve vm backend throughput ([#83](https://github.com/oakcask/schemurai/issues/83)) ([fcd736c](https://github.com/oakcask/schemurai/commit/fcd736cce4a88199a4055449e5a55433a1dda24d))
+* improve VM build performance ([#89](https://github.com/oakcask/schemurai/issues/89)) ([64af485](https://github.com/oakcask/schemurai/commit/64af4852bbe4b82db1d11990bd4b52257b8a5238))
+* improve vm validation performance ([#80](https://github.com/oakcask/schemurai/issues/80)) ([911f168](https://github.com/oakcask/schemurai/commit/911f168c893ea705fbe465779ca35606da67ffc9))
+* optimize newer draft validation ([#86](https://github.com/oakcask/schemurai/issues/86)) ([f71daac](https://github.com/oakcask/schemurai/commit/f71daac3a033a938ef60f2e214e912b4a4632d26))
+* reduce VM validation allocations ([#84](https://github.com/oakcask/schemurai/issues/84)) ([b1ec79b](https://github.com/oakcask/schemurai/commit/b1ec79bf0c6b70f8cf884f3d113e0f0a5b51fd9e))
+
 ## [2.1.0](https://github.com/oakcask/schemurai/compare/v2.0.0...v2.1.0) (2026-09-01)
 
 
