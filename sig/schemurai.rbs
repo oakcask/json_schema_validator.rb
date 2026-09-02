@@ -1,0 +1,157 @@
+module Schemurai
+  # A JSON-shaped Ruby value accepted as a schema value or validation instance.
+  type json_value =
+    nil
+    | bool
+    | Integer
+    | Float
+    | String
+    | Array[json_value]
+    | Hash[String, json_value]
+
+  # A JSON Schema root.
+  type schema = bool | Hash[String, json_value]
+
+  # External schemas indexed by their absolute URI.
+  type schemas = Hash[String, schema]
+
+  # A resolved evaluator backend.
+  type backend = :ruby | :vm
+
+  # A backend accepted when configuring a validator.
+  type backend_selection = backend | :default
+
+  VERSION: String
+
+  class Error < StandardError
+  end
+
+  class ResolutionError < Error
+  end
+
+  class UnsupportedFormatError < Error
+  end
+
+  class InvalidSchemaError < Error
+    attr_reader result: Result
+
+    def initialize: (Result result) -> void
+  end
+
+  class ValidationError < Data
+    attr_reader keyword: String
+    attr_reader instance_path: String
+    attr_reader schema_path: String
+    attr_reader message: String
+
+    def self.new: (String keyword, String instance_path, String schema_path, String message) -> ValidationError
+                | (keyword: String, instance_path: String, schema_path: String, message: String) -> ValidationError
+
+    def self.[]: (String keyword, String instance_path, String schema_path, String message) -> ValidationError
+               | (keyword: String, instance_path: String, schema_path: String, message: String) -> ValidationError
+
+    def to_h: () -> {
+      keyword: String,
+      instance_path: String,
+      schema_path: String,
+      message: String
+    }
+  end
+
+  class Result
+    attr_reader errors: Array[ValidationError]
+
+    def initialize: (Array[ValidationError] errors) -> void
+    def valid?: () -> bool
+    alias success? valid?
+  end
+
+  interface _Evaluator
+    def backend: () -> backend
+    def validate: (json_value instance) -> Result
+    def valid?: (json_value instance) -> bool
+  end
+
+  class Validator
+    def initialize: (_Evaluator evaluator) -> void
+    def backend: () -> backend
+    def validate: (json_value instance) -> Result
+    def valid?: (json_value instance) -> bool
+  end
+
+  class SchemaRegistry
+    attr_reader backend: backend
+
+    def initialize: (
+      ?schemas: schemas,
+      ?validate_schema: bool,
+      ?backend: backend_selection
+    ) -> void
+
+    def validate_schema?: () -> bool
+
+    def compile: (
+      schema schema,
+      ?base_uri: String?,
+      ?content: bool,
+      ?format: bool
+    ) -> Validator
+
+    def validate_schema: (schema schema) -> Result
+    def valid_schema?: (schema schema) -> bool
+    def make_shareable: () -> self
+    def shareable?: () -> bool
+
+    def validator_for: (
+      String uri,
+      ?content: bool,
+      ?format: bool
+    ) -> Validator
+  end
+
+  def self.backend: () -> backend
+
+  def self.compile: (
+    schema schema,
+    ?schemas: schemas,
+    ?base_uri: String?,
+    ?content: bool,
+    ?format: bool,
+    ?validate_schema: bool,
+    ?backend: backend_selection
+  ) -> Validator
+
+  def self.validate_schema: (
+    schema schema,
+    ?schemas: schemas,
+    ?backend: backend_selection
+  ) -> Result
+
+  def self.valid_schema?: (
+    schema schema,
+    ?schemas: schemas,
+    ?backend: backend_selection
+  ) -> bool
+
+  def self.validate: (
+    schema schema,
+    json_value instance,
+    ?schemas: schemas,
+    ?base_uri: String?,
+    ?content: bool,
+    ?format: bool,
+    ?validate_schema: bool,
+    ?backend: backend_selection
+  ) -> Result
+
+  def self.valid?: (
+    schema schema,
+    json_value instance,
+    ?schemas: schemas,
+    ?base_uri: String?,
+    ?content: bool,
+    ?format: bool,
+    ?validate_schema: bool,
+    ?backend: backend_selection
+  ) -> bool
+end

@@ -2,6 +2,9 @@
 
 require "schemurai"
 
+signature_path = File.join(Gem.loaded_specs.fetch("schemurai").full_gem_path, "sig/schemurai.rbs")
+abort "expected the installed gem to include its RBS signature" unless File.file?(signature_path)
+
 schema = {
   "$schema" => "https://json-schema.org/draft/2020-12/schema",
   "type" => "object",

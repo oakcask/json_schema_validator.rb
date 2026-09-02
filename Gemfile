@@ -13,6 +13,10 @@ group :lint do
   gem "rubocop-rspec", require: false
 end
 
+group :type_check do
+  gem "rbs", require: false
+end
+
 group :documentation do
   gem "rake", require: false
   # Installing rdoc by bundler causes plugin loading issue.

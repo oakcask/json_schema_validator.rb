@@ -120,6 +120,7 @@ DEPENDENCIES
   json-schema!
   json_schemer!
   rake
+  rbs
   rdoc
   rspec
   rubocop-rspec

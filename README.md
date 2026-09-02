@@ -11,6 +11,8 @@ precision, ECMA-262 regular expressions, content validation, anchors, and dynami
 references. The dialect is selected from the schema's `$schema` URI; schemas that
 omit `$schema` use Draft 7 for compatibility.
 
+Schemurai ships RBS declarations for its public API in `sig/schemurai.rbs`.
+
 ```ruby
 require "schemurai"
 
