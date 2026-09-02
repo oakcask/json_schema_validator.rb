@@ -11,6 +11,19 @@ Run the current implementation with:
 bundle exec ruby benchmark/draft7.rb
 ```
 
+Set `BENCHMARK_ONLY` to `build`, `suite`, or `validate` to isolate one Draft 7
+workload, as with the newer-draft benchmarks below.
+
+Use the validation-only workload and allocation runner to measure the VM
+backend against another checkout:
+
+```sh
+SCHEMURAI_BACKEND=vm BENCHMARK_ONLY=validate bundle exec ruby benchmark/draft7.rb
+SCHEMURAI_BACKEND=vm bundle exec ruby benchmark/allocations.rb
+JSON_SCHEMA_VALIDATOR_LIB=../baseline/lib SCHEMURAI_BACKEND=vm \
+  BENCHMARK_ONLY=validate bundle exec ruby benchmark/draft7.rb
+```
+
 Measure allocated objects for the same build, end-to-end suite, and validation
 workloads with:
 

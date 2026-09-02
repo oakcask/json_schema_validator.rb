@@ -329,14 +329,14 @@ module Schemurai
           snapshot(schema["required"]),
           schema.key?("required"),
           compile_map(node, schema, "properties"),
-          compile_map(node, schema, "patternProperties"),
+          compile_optional_map(node, schema, "patternProperties"),
           schema.key?("additionalProperties") ? compile(node.child("additionalProperties")) : nil,
           schema.key?("propertyNames") ? compile(node.child("propertyNames")) : nil,
           compile_dependencies(node, schema),
           schema.fetch("dependentRequired", {}).map do |name, required_names|
             [snapshot(name), snapshot(required_names)].freeze
-          end.freeze,
-          compile_map(node, schema, "dependentSchemas"),
+          end.then { |entries| entries.empty? ? nil : entries.freeze },
+          compile_optional_map(node, schema, "dependentSchemas"),
           schema.key?("unevaluatedProperties") ? compile(node.child("unevaluatedProperties")) : nil
         )
       end
@@ -347,11 +347,17 @@ module Schemurai
         end.freeze
       end
 
+      private def compile_optional_map(node, schema, keyword)
+        compiled = compile_map(node, schema, keyword)
+        compiled unless compiled.empty?
+      end
+
       private def compile_dependencies(node, schema)
-        schema.fetch("dependencies", {}).map do |name, dependency|
+        compiled = schema.fetch("dependencies", {}).map do |name, dependency|
           compiled = dependency.is_a?(Array) ? snapshot(dependency) : compile(node.child("dependencies", name))
           [snapshot(name), compiled].freeze
-        end.freeze
+        end
+        compiled.freeze unless compiled.empty?
       end
 
       private def snapshot(value)

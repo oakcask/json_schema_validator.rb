@@ -60,18 +60,25 @@ puts "#{groups.length} schemas, #{cases} validation cases"
 
 time = Float(ENV.fetch("BENCHMARK_TIME", "5"))
 warmup = Float(ENV.fetch("BENCHMARK_WARMUP", "2"))
+only = ENV["BENCHMARK_ONLY"]
 
-Benchmark.ips do |benchmark|
-  benchmark.config(time: time, warmup: warmup)
-  benchmark.report("lib build") { build(groups, remotes) }
+if only.nil? || only == "build"
+  Benchmark.ips do |benchmark|
+    benchmark.config(time: time, warmup: warmup)
+    benchmark.report("lib build") { build(groups, remotes) }
+  end
 end
 
-Benchmark.ips do |benchmark|
-  benchmark.config(time: time, warmup: warmup)
-  benchmark.report("lib suite") { validate_all(build(groups, remotes)) }
+if only.nil? || only == "suite"
+  Benchmark.ips do |benchmark|
+    benchmark.config(time: time, warmup: warmup)
+    benchmark.report("lib suite") { validate_all(build(groups, remotes)) }
+  end
 end
 
-Benchmark.ips do |benchmark|
-  benchmark.config(time: time, warmup: warmup)
-  benchmark.report("lib validate") { validate_all(compiled) }
+if only.nil? || only == "validate"
+  Benchmark.ips do |benchmark|
+    benchmark.config(time: time, warmup: warmup)
+    benchmark.report("lib validate") { validate_all(compiled) }
+  end
 end
