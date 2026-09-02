@@ -38,6 +38,13 @@ RSpec.describe "the compatibility domain" do
       expect(graph.nodes).to be_empty
     end
 
+    it "reports escaped paths for invalid nested values" do
+      schema = {"a/b" => [{"c~d" => Object.new}]}
+
+      expect { Schemurai.compile(schema) }
+        .to raise_error(Schemurai::Error, /invalid JSON-shaped schema\/a~1b\/0\/c~0d:/)
+    end
+
     it "rejects invalid external schemas before retaining any registry input" do
       expect { Schemurai::SchemaRegistry.new(schemas: {"urn:bad" => {"value" => Rational(1, 2)}}) }
         .to raise_error(Schemurai::Error, /schemas\["urn:bad"\]\/value: contains unsupported Rational/)

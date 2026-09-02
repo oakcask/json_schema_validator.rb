@@ -42,17 +42,18 @@ schemer_ref_resolver = schemer_schemas.to_proc
 
 adapters = {
   "lib" => {
-    build: lambda { |group|
-      Schemurai.compile(
+    prepare_build: -> { Schemurai::SchemaRegistry.new(schemas: remotes) },
+    build: lambda { |registry, group|
+      registry.compile(
         group.fetch(:schema),
-        schemas: remotes,
         content: group.fetch(:content)
       )
     },
     valid: ->(validator, data) { validator.valid?(data) }
   },
   "json_schemer" => {
-    build: lambda { |group|
+    prepare_build: -> {},
+    build: lambda { |_context, group|
       JSONSchemer.schema(
         group.fetch(:schema),
         meta_schema: JSONSchemer.draft202012,
@@ -66,8 +67,9 @@ adapters = {
 }
 
 def build(groups, adapter)
+  context = adapter.fetch(:prepare_build).call
   groups.map do |group|
-    group.merge(validator: adapter.fetch(:build).call(group))
+    group.merge(validator: adapter.fetch(:build).call(context, group))
   end
 end
 

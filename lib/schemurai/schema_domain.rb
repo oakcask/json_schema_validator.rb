@@ -8,7 +8,7 @@ module Schemurai
           invalid!(label, "must be a boolean or an object")
         end
 
-        validate_value!(schema, label, {})
+        validate_value!(schema, label, [], {})
         schema
       end
 
@@ -23,31 +23,37 @@ module Schemurai
         schemas
       end
 
-      module_function def validate_value!(value, path, ancestors)
+      module_function def validate_value!(value, label, path, ancestors)
         case value
         when nil, true, false
           nil
         when String, Integer
-          invalid!(path, "uses a subclass of #{value.class.superclass}") unless supported_exact_scalar?(value)
+          invalid_at!(label, path, "uses a subclass of #{value.class.superclass}") unless supported_exact_scalar?(value)
         when Float
-          invalid!(path, "must contain only finite numbers") unless value.finite?
-          invalid!(path, "uses a Float subclass") unless value.instance_of?(Float)
+          invalid_at!(label, path, "must contain only finite numbers") unless value.finite?
+          invalid_at!(label, path, "uses a Float subclass") unless value.instance_of?(Float)
         when Array
-          invalid!(path, "uses an Array subclass") unless value.instance_of?(Array)
-          descend!(value, path, ancestors) do
-            value.each_with_index { |item, index| validate_value!(item, pointer(path, index), ancestors) }
+          invalid_at!(label, path, "uses an Array subclass") unless value.instance_of?(Array)
+          descend!(value, label, path, ancestors) do
+            value.each_with_index do |item, index|
+              path << index
+              validate_value!(item, label, path, ancestors)
+              path.pop
+            end
           end
         when Hash
-          invalid!(path, "uses a Hash subclass") unless value.instance_of?(Hash)
-          descend!(value, path, ancestors) do
+          invalid_at!(label, path, "uses a Hash subclass") unless value.instance_of?(Hash)
+          descend!(value, label, path, ancestors) do
             value.each do |key, item|
-              invalid!(path, "contains a non-string object key") unless key.instance_of?(String)
+              invalid_at!(label, path, "contains a non-string object key") unless key.instance_of?(String)
 
-              validate_value!(item, pointer(path, key), ancestors)
+              path << key
+              validate_value!(item, label, path, ancestors)
+              path.pop
             end
           end
         else
-          invalid!(path, "contains unsupported #{value.class}")
+          invalid_at!(label, path, "contains unsupported #{value.class}")
         end
       end
       private_class_method :validate_value!
@@ -57,8 +63,8 @@ module Schemurai
       end
       private_class_method :supported_exact_scalar?
 
-      module_function def descend!(value, path, ancestors)
-        invalid!(path, "contains a recursive container") if ancestors.key?(value.object_id)
+      module_function def descend!(value, label, path, ancestors)
+        invalid_at!(label, path, "contains a recursive container") if ancestors.key?(value.object_id)
 
         ancestors[value.object_id] = true
         yield
@@ -67,11 +73,13 @@ module Schemurai
       end
       private_class_method :descend!
 
-      module_function def pointer(path, segment)
-        escaped = segment.to_s.gsub("~", "~0").gsub("/", "~1")
-        "#{path}/#{escaped}"
+      module_function def invalid_at!(label, path, reason)
+        location = path.reduce(label.dup) do |result, segment|
+          result << "/" << segment.to_s.gsub("~", "~0").gsub("/", "~1")
+        end
+        invalid!(location, reason)
       end
-      private_class_method :pointer
+      private_class_method :invalid_at!
 
       module_function def invalid!(path, reason)
         raise Error, "invalid JSON-shaped #{path}: #{reason}"

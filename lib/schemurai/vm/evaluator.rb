@@ -8,6 +8,46 @@ require_relative "compiler"
 
 module Schemurai
   module VM
+    class EvaluationBuffer
+      attr_reader :evaluated_properties, :evaluated_items
+
+      def initialize
+        @evaluated_properties = []
+        @evaluated_items = []
+      end
+
+      def valid? = true
+
+      def reset
+        @evaluated_properties.clear
+        @evaluated_items.clear
+        self
+      end
+
+      def record_property(name)
+        @evaluated_properties << name unless @evaluated_properties.include?(name)
+        self
+      end
+
+      def record_item(index)
+        @evaluated_items << index unless @evaluated_items.include?(index)
+        self
+      end
+
+      def merge(other)
+        return Evaluation.invalid unless other.valid?
+
+        merge_locations(@evaluated_properties, other.evaluated_properties)
+        merge_locations(@evaluated_items, other.evaluated_items)
+        self
+      end
+
+      private def merge_locations(target, locations)
+        locations.each { |location| target << location unless target.include?(location) }
+      end
+    end
+    private_constant :EvaluationBuffer
+
     class Evaluator
       MISSING_SEGMENT = Object.new.freeze
       DECIMAL_CACHE_LIMIT = 16
@@ -28,6 +68,8 @@ module Schemurai
         @dynamic_scope = nil
         @instance_path_buffer = nil
         @schema_path_buffer = nil
+        @evaluation_pool = nil
+        @evaluation_pool_index = 0
       end
 
       def validate(instance)
@@ -45,12 +87,14 @@ module Schemurai
         @dynamic_scope&.clear
         @instance_path = nil
         @schema_path = nil
+        reset_evaluation_pool
         evaluate_valid(@root, instance)
       end
 
       private def prepare_evaluation(paths:)
         @error_count = 0
         @dynamic_scope&.clear
+        reset_evaluation_pool
         if paths
           (@instance_path_buffer ||= []).clear
           (@schema_path_buffer ||= []).clear
@@ -160,6 +204,17 @@ module Schemurai
         false
       ensure
         leave_scope if entered_scope
+      end
+
+      private def reset_evaluation_pool
+        @evaluation_pool_index = 0
+      end
+
+      private def tracked_evaluation
+        pool = (@evaluation_pool ||= [])
+        index = @evaluation_pool_index
+        @evaluation_pool_index += 1
+        (pool[index] ||= EvaluationBuffer.new).reset
       end
 
       private def evaluate(program, instance)
@@ -550,7 +605,7 @@ module Schemurai
       end
 
       private def check_array(rules, value, prior_evaluation)
-        evaluated = nil
+        evaluation = nil
         if rules.has_max_items && value.length > rules.max_items
           return Evaluation.invalid unless @errors
 
@@ -587,7 +642,7 @@ module Schemurai
             break if index >= value.length
             valid = evaluate_child_at(child, value[index], index, "prefixItems", index)
             return Evaluation.invalid if !valid && !@errors
-            (evaluated ||= []) << index
+            (evaluation ||= tracked_evaluation).record_item(index)
           end
         end
 
@@ -597,13 +652,13 @@ module Schemurai
             break if index >= value.length
             valid = evaluate_child_at(child, value[index], index, "items", index)
             return Evaluation.invalid if !valid && !@errors
-            (evaluated ||= []) << index
+            (evaluation ||= tracked_evaluation).record_item(index)
           end
           if value.length > items.length && (additional = rules.additional)
             (items.length...value.length).each do |index|
               valid = evaluate_child_at(additional, value[index], index, "additionalItems")
               return Evaluation.invalid if !valid && !@errors
-              (evaluated ||= []) << index
+              (evaluation ||= tracked_evaluation).record_item(index)
             end
           end
         elsif items
@@ -611,7 +666,7 @@ module Schemurai
           (start...value.length).each do |index|
             valid = evaluate_child_at(items, value[index], index, "items")
             return Evaluation.invalid if !valid && !@errors
-            (evaluated ||= []) << index
+            (evaluation ||= tracked_evaluation).record_item(index)
           end
         end
 
@@ -631,7 +686,7 @@ module Schemurai
             end
           end
           if matched
-            evaluated ? evaluated.concat(matched) : evaluated = matched
+            matched.each { |index| (evaluation ||= tracked_evaluation).record_item(index) }
           end
         end
 
@@ -639,20 +694,19 @@ module Schemurai
           prior_items = prior_evaluation.evaluated_items
           index = 0
           while index < value.length
-            if prior_items.include?(index) || evaluated&.include?(index)
+            if prior_items.include?(index) || evaluation&.evaluated_items&.include?(index)
               index += 1
               next
             end
             valid = evaluate_child_at(unevaluated, value[index], index, "unevaluatedItems")
             return Evaluation.invalid if !valid && !@errors
-            (evaluated ||= []) << index
+            (evaluation ||= tracked_evaluation).record_item(index)
             index += 1
           end
         end
-        return Evaluation.valid unless evaluated
+        return Evaluation.valid unless evaluation
 
-        evaluated.uniq!
-        Evaluation.valid(evaluated_items: evaluated)
+        evaluation
       end
 
       private def valid_object?(rules, value)
@@ -713,7 +767,7 @@ module Schemurai
       end
 
       private def check_object(rules, value, prior_evaluation)
-        evaluated = nil
+        evaluation = nil
         if rules.has_max_properties && value.length > rules.max_properties
           return Evaluation.invalid unless @errors
 
@@ -745,7 +799,7 @@ module Schemurai
             matched = true
             valid = evaluate_child_at(child, property_value, name, "properties", name)
             return Evaluation.invalid if !valid && !@errors
-            (evaluated ||= []) << name
+            (evaluation ||= tracked_evaluation).record_property(name)
           end
           if patterns
             patterns.each do |pattern, child|
@@ -753,13 +807,13 @@ module Schemurai
               matched = true
               valid = evaluate_child_at(child, property_value, name, "patternProperties", pattern)
               return Evaluation.invalid if !valid && !@errors
-              (evaluated ||= []) << name
+              (evaluation ||= tracked_evaluation).record_property(name)
             end
           end
           if !matched && (additional = rules.additional)
             valid = evaluate_child_at(additional, property_value, name, "additionalProperties")
             return Evaluation.invalid if !valid && !@errors
-            (evaluated ||= []) << name
+            (evaluation ||= tracked_evaluation).record_property(name)
           end
         end
 
@@ -783,7 +837,9 @@ module Schemurai
             else
               result = evaluate_at(dependency, value, MISSING_SEGMENT, "dependencies", name)
               if result.valid? && !result.evaluated_properties.empty?
-                (evaluated ||= []).concat(result.evaluated_properties)
+                result.evaluated_properties.each do |property|
+                  (evaluation ||= tracked_evaluation).record_property(property)
+                end
               end
             end
           end
@@ -805,24 +861,25 @@ module Schemurai
             next unless value.key?(name)
             result = evaluate_at(child, value, MISSING_SEGMENT, "dependentSchemas", name)
             if result.valid? && !result.evaluated_properties.empty?
-              (evaluated ||= []).concat(result.evaluated_properties)
+              result.evaluated_properties.each do |property|
+                (evaluation ||= tracked_evaluation).record_property(property)
+              end
             end
           end
         end
         if (unevaluated = rules.unevaluated)
           prior_properties = prior_evaluation.evaluated_properties
           value.each_key do |name|
-            next if prior_properties.include?(name) || evaluated&.include?(name)
+            next if prior_properties.include?(name) || evaluation&.evaluated_properties&.include?(name)
 
             valid = evaluate_child_at(unevaluated, value[name], name, "unevaluatedProperties")
             return Evaluation.invalid if !valid && !@errors
-            (evaluated ||= []) << name
+            (evaluation ||= tracked_evaluation).record_property(name)
           end
         end
-        return Evaluation.valid unless evaluated
+        return Evaluation.valid unless evaluation
 
-        evaluated.uniq!
-        Evaluation.valid(evaluated_properties: evaluated)
+        evaluation
       end
 
       private def check_combiner(opcode, operand, value)
