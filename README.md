@@ -287,8 +287,7 @@ ruby script/oracle-cases --summary
 ```
 
 The serialized oracle tools are `script/oracle-runner` and
-`script/oracle-compare`. Ruby interpreter and YJIT baseline instructions are in
-[`benchmark/baselines/README.md`](benchmark/baselines/README.md).
+`script/oracle-compare`.
 
 Run the linter with:
 
