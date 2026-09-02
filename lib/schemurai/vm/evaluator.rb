@@ -227,13 +227,17 @@ module Schemurai
             end
           when :typed_array
             if instance.is_a?(Array)
-              evaluation = evaluation.merge(check_array(operand, instance, evaluation))
+              result = check_array(operand, instance, evaluation)
+              return Evaluation.invalid if !@errors && (!result.valid? || @error_count != before)
+              evaluation = evaluation.merge(result)
             else
               check_compiled_type("array", false, instance)
             end
           when :typed_object
             if instance.is_a?(Hash)
-              evaluation = evaluation.merge(check_object(operand, instance, evaluation))
+              result = check_object(operand, instance, evaluation)
+              return Evaluation.invalid if !@errors && (!result.valid? || @error_count != before)
+              evaluation = evaluation.merge(result)
             else
               check_compiled_type("object", false, instance)
             end
@@ -244,15 +248,25 @@ module Schemurai
           when :const
             add_error("const") { Internal::ErrorMessage.const } unless json_equal?(operand, instance)
           when :allOf, :anyOf, :oneOf, :not, :conditional
-            evaluation = evaluation.merge(check_combiner(opcode, operand, instance))
+            result = check_combiner(opcode, operand, instance)
+            return Evaluation.invalid if !@errors && (!result.valid? || @error_count != before)
+            evaluation = evaluation.merge(result)
           when :number
             check_number(operand, instance) if instance.is_a?(Numeric) && !instance.is_a?(Complex)
           when :string
             check_string(operand, instance) if instance.is_a?(String)
           when :array
-            evaluation = evaluation.merge(check_array(operand, instance, evaluation)) if instance.is_a?(Array)
+            if instance.is_a?(Array)
+              result = check_array(operand, instance, evaluation)
+              return Evaluation.invalid if !@errors && (!result.valid? || @error_count != before)
+              evaluation = evaluation.merge(result)
+            end
           when :object
-            evaluation = evaluation.merge(check_object(operand, instance, evaluation)) if instance.is_a?(Hash)
+            if instance.is_a?(Hash)
+              result = check_object(operand, instance, evaluation)
+              return Evaluation.invalid if !@errors && (!result.valid? || @error_count != before)
+              evaluation = evaluation.merge(result)
+            end
           else
             raise "unknown VM instruction #{opcode.inspect}"
           end
@@ -271,12 +285,11 @@ module Schemurai
         target = reference_target(program, rules)
         return target unless rules.fragment == "" && target.recursive_anchor?
 
-        dynamic = Array(@dynamic_scope).filter_map do |resource|
-          root = resource.root
-          compiled = @compiler.compile(root)
-          compiled if compiled.recursive_anchor?
-        end.first
-        dynamic || target
+        @dynamic_scope&.each do |resource|
+          compiled = @compiler.compile(resource.root)
+          return compiled if compiled.recursive_anchor?
+        end
+        target
       end
 
       private def dynamic_target(program, rules)
@@ -295,14 +308,13 @@ module Schemurai
 
       private def valid_reference?(source, target, instance)
         instances = active_instances(source)
-        instance_id = instance.object_id
-        return true if instances[instance_id]
+        return true if instances.key?(instance)
 
-        instances[instance_id] = true
+        instances[instance] = true
         activated = true
         evaluate_valid(target, instance)
       ensure
-        instances&.delete(instance_id) if activated
+        instances&.delete(instance) if activated
       end
 
       private def reference_target(program, rules)
@@ -331,14 +343,13 @@ module Schemurai
 
       private def evaluate_reference(source, target, instance, keyword)
         instances = active_instances(source)
-        instance_id = instance.object_id
-        return Evaluation.valid if instances[instance_id]
+        return Evaluation.valid if instances.key?(instance)
 
-        instances[instance_id] = true
+        instances[instance] = true
         activated = true
         evaluate_at(target, instance, MISSING_SEGMENT, keyword)
       ensure
-        instances&.delete(instance_id) if activated
+        instances&.delete(instance) if activated
       end
 
       private def unresolved_reference(keyword, error)
@@ -347,8 +358,8 @@ module Schemurai
       end
 
       private def active_instances(program)
-        active = (@active ||= {})
-        active[program.node.object_id] ||= {}
+        active = (@active ||= {}.compare_by_identity)
+        active[program] ||= {}.compare_by_identity
       end
 
       private def check_compiled_type(name, valid, value)
@@ -539,11 +550,15 @@ module Schemurai
       end
 
       private def check_array(rules, value, prior_evaluation)
-        evaluated = []
+        evaluated = nil
         if rules.has_max_items && value.length > rules.max_items
+          return Evaluation.invalid unless @errors
+
           add_error("maxItems") { Internal::ErrorMessage.size("maxItems", rules.max_items, value.length) }
         end
         if rules.has_min_items && value.length < rules.min_items
+          return Evaluation.invalid unless @errors
+
           add_error("minItems") { Internal::ErrorMessage.size("minItems", rules.min_items, value.length) }
         end
         if rules.unique
@@ -560,14 +575,19 @@ module Schemurai
             end
             index += 1
           end
-          add_error("uniqueItems") { Internal::ErrorMessage.unique_items } if duplicate
+          if duplicate
+            return Evaluation.invalid unless @errors
+
+            add_error("uniqueItems") { Internal::ErrorMessage.unique_items }
+          end
         end
 
         if (prefix_items = rules.prefix_items)
           prefix_items.each_with_index do |child, index|
             break if index >= value.length
-            evaluate_at(child, value[index], index, "prefixItems", index)
-            evaluated << index
+            valid = evaluate_child_at(child, value[index], index, "prefixItems", index)
+            return Evaluation.invalid if !valid && !@errors
+            (evaluated ||= []) << index
           end
         end
 
@@ -575,49 +595,61 @@ module Schemurai
         if rules.items_list
           items.each_with_index do |child, index|
             break if index >= value.length
-            evaluate_at(child, value[index], index, "items", index)
-            evaluated << index
+            valid = evaluate_child_at(child, value[index], index, "items", index)
+            return Evaluation.invalid if !valid && !@errors
+            (evaluated ||= []) << index
           end
           if value.length > items.length && (additional = rules.additional)
             (items.length...value.length).each do |index|
-              evaluate_at(additional, value[index], index, "additionalItems")
-              evaluated << index
+              valid = evaluate_child_at(additional, value[index], index, "additionalItems")
+              return Evaluation.invalid if !valid && !@errors
+              (evaluated ||= []) << index
             end
           end
         elsif items
           start = rules.prefix_items&.length || 0
           (start...value.length).each do |index|
-            evaluate_at(items, value[index], index, "items")
-            evaluated << index
+            valid = evaluate_child_at(items, value[index], index, "items")
+            return Evaluation.invalid if !valid && !@errors
+            (evaluated ||= []) << index
           end
         end
 
         if (contains = rules.contains)
-          matched = value.each_index.select do |index|
-            trial_at(contains, value[index], index, "contains").valid?
+          matched = nil
+          index = 0
+          while index < value.length
+            (matched ||= []) << index if trial_at(contains, value[index], index, "contains").valid?
+            index += 1
           end
-          unless matched.length.between?(rules.min_contains, rules.max_contains)
+          matched_count = matched ? matched.length : 0
+          unless matched_count.between?(rules.min_contains, rules.max_contains)
+            return Evaluation.invalid unless @errors
+
             add_error("contains") do
-              Internal::ErrorMessage.contains(matched.length, rules.min_contains, rules.max_contains)
+              Internal::ErrorMessage.contains(matched_count, rules.min_contains, rules.max_contains)
             end
           end
-          evaluated.concat(matched)
+          if matched
+            evaluated ? evaluated.concat(matched) : evaluated = matched
+          end
         end
 
         if (unevaluated = rules.unevaluated)
           prior_items = prior_evaluation.evaluated_items
           index = 0
           while index < value.length
-            if prior_items.include?(index) || evaluated.include?(index)
+            if prior_items.include?(index) || evaluated&.include?(index)
               index += 1
               next
             end
-            evaluate_at(unevaluated, value[index], index, "unevaluatedItems")
-            evaluated << index
+            valid = evaluate_child_at(unevaluated, value[index], index, "unevaluatedItems")
+            return Evaluation.invalid if !valid && !@errors
+            (evaluated ||= []) << index
             index += 1
           end
         end
-        return Evaluation.valid if evaluated.empty?
+        return Evaluation.valid unless evaluated
 
         evaluated.uniq!
         Evaluation.valid(evaluated_items: evaluated)
@@ -681,20 +713,27 @@ module Schemurai
       end
 
       private def check_object(rules, value, prior_evaluation)
-        evaluated = []
+        evaluated = nil
         if rules.has_max_properties && value.length > rules.max_properties
+          return Evaluation.invalid unless @errors
+
           add_error("maxProperties") do
             Internal::ErrorMessage.size("maxProperties", rules.max_properties, value.length)
           end
         end
         if rules.has_min_properties && value.length < rules.min_properties
+          return Evaluation.invalid unless @errors
+
           add_error("minProperties") do
             Internal::ErrorMessage.size("minProperties", rules.min_properties, value.length)
           end
         end
         if (required = rules.required)
           required.each do |name|
-            add_error("required") { Internal::ErrorMessage.required(name) } unless value.key?(name)
+            next if value.key?(name)
+            return Evaluation.invalid unless @errors
+
+            add_error("required") { Internal::ErrorMessage.required(name) }
           end
         end
 
@@ -704,25 +743,31 @@ module Schemurai
           matched = false
           if (child = properties[name])
             matched = true
-            evaluate_at(child, property_value, name, "properties", name)
-            evaluated << name
+            valid = evaluate_child_at(child, property_value, name, "properties", name)
+            return Evaluation.invalid if !valid && !@errors
+            (evaluated ||= []) << name
           end
           if patterns
             patterns.each do |pattern, child|
               next unless ecma_regexp(pattern).match?(name)
               matched = true
-              evaluate_at(child, property_value, name, "patternProperties", pattern)
-              evaluated << name
+              valid = evaluate_child_at(child, property_value, name, "patternProperties", pattern)
+              return Evaluation.invalid if !valid && !@errors
+              (evaluated ||= []) << name
             end
           end
           if !matched && (additional = rules.additional)
-            evaluate_at(additional, property_value, name, "additionalProperties")
-            evaluated << name
+            valid = evaluate_child_at(additional, property_value, name, "additionalProperties")
+            return Evaluation.invalid if !valid && !@errors
+            (evaluated ||= []) << name
           end
         end
 
         if (property_names = rules.property_names)
-          value.each_key { |name| evaluate_at(property_names, name, name, "propertyNames") }
+          value.each_key do |name|
+            valid = evaluate_child_at(property_names, name, name, "propertyNames")
+            return Evaluation.invalid if !valid && !@errors
+          end
         end
         if (dependencies = rules.dependencies)
           dependencies.each do |name, dependency|
@@ -730,12 +775,16 @@ module Schemurai
             if dependency.is_a?(Array)
               dependency.each do |required_name|
                 unless value.key?(required_name)
+                  return Evaluation.invalid unless @errors
+
                   add_error("dependencies") { Internal::ErrorMessage.dependent_required(name, required_name) }
                 end
               end
             else
               result = evaluate_at(dependency, value, MISSING_SEGMENT, "dependencies", name)
-              evaluated.concat(result.evaluated_properties) if result.valid?
+              if result.valid? && !result.evaluated_properties.empty?
+                (evaluated ||= []).concat(result.evaluated_properties)
+              end
             end
           end
         end
@@ -744,6 +793,8 @@ module Schemurai
             next unless value.key?(name)
             required_names.each do |required_name|
               unless value.key?(required_name)
+                return Evaluation.invalid unless @errors
+
                 add_error("dependentRequired") { Internal::ErrorMessage.dependent_required(name, required_name) }
               end
             end
@@ -753,19 +804,22 @@ module Schemurai
           dependent_schemas.each do |name, child|
             next unless value.key?(name)
             result = evaluate_at(child, value, MISSING_SEGMENT, "dependentSchemas", name)
-            evaluated.concat(result.evaluated_properties) if result.valid?
+            if result.valid? && !result.evaluated_properties.empty?
+              (evaluated ||= []).concat(result.evaluated_properties)
+            end
           end
         end
         if (unevaluated = rules.unevaluated)
           prior_properties = prior_evaluation.evaluated_properties
           value.each_key do |name|
-            next if prior_properties.include?(name) || evaluated.include?(name)
+            next if prior_properties.include?(name) || evaluated&.include?(name)
 
-            evaluate_at(unevaluated, value[name], name, "unevaluatedProperties")
-            evaluated << name
+            valid = evaluate_child_at(unevaluated, value[name], name, "unevaluatedProperties")
+            return Evaluation.invalid if !valid && !@errors
+            (evaluated ||= []) << name
           end
         end
-        return Evaluation.valid if evaluated.empty?
+        return Evaluation.valid unless evaluated
 
         evaluated.uniq!
         Evaluation.valid(evaluated_properties: evaluated)
@@ -775,37 +829,49 @@ module Schemurai
         evaluation = Evaluation.valid
         case opcode
         when :allOf
-          operand.each_with_index do |child, index|
-            evaluation = evaluation.merge(evaluate_at(child, value, MISSING_SEGMENT, "allOf", index))
+          index = 0
+          while index < operand.length
+            evaluation = evaluation.merge(evaluate_at(operand[index], value, MISSING_SEGMENT, "allOf", index))
+            index += 1
           end
         when :anyOf
-          matches = operand.each_with_index.filter_map do |child, index|
-            result = trial_at(child, value, MISSING_SEGMENT, "anyOf", index)
-            result if result.valid?
+          matches = 0
+          index = 0
+          while index < operand.length
+            result = trial_at(operand[index], value, MISSING_SEGMENT, "anyOf", index)
+            if result.valid?
+              matches += 1
+              evaluation = evaluation.merge(result)
+            end
+            index += 1
           end
-          if matches.empty?
-            add_error("anyOf") { Internal::ErrorMessage.any_of }
-          else
-            matches.each { |result| evaluation = evaluation.merge(result) }
-          end
+          add_error("anyOf") { Internal::ErrorMessage.any_of } if matches.zero?
         when :oneOf
-          matches = operand.each_with_index.filter_map do |child, index|
-            result = trial_at(child, value, MISSING_SEGMENT, "oneOf", index)
-            result if result.valid?
+          matches = 0
+          matched_evaluation = nil
+          index = 0
+          while index < operand.length
+            result = trial_at(operand[index], value, MISSING_SEGMENT, "oneOf", index)
+            if result.valid?
+              matches += 1
+              matched_evaluation = result
+            end
+            index += 1
           end
-          if matches.length == 1
-            evaluation = evaluation.merge(matches.first)
+          if matches == 1
+            evaluation = evaluation.merge(matched_evaluation)
           else
-            add_error("oneOf") { Internal::ErrorMessage.one_of(matches.length) }
+            add_error("oneOf") { Internal::ErrorMessage.one_of(matches) }
           end
         when :not
           add_error("not") { Internal::ErrorMessage.not } if trial_at(operand, value, MISSING_SEGMENT, "not").valid?
         when :conditional
           condition = trial_at(operand.condition, value, MISSING_SEGMENT, "if")
-          evaluation = evaluation.merge(condition) if condition.valid?
-          if condition.valid? && operand.has_then
+          condition_valid = condition.valid?
+          evaluation = evaluation.merge(condition) if condition_valid
+          if condition_valid && operand.has_then
             evaluation = evaluation.merge(evaluate_at(operand.then_branch, value, MISSING_SEGMENT, "then"))
-          elsif !condition.valid? && operand.has_else
+          elsif !condition_valid && operand.has_else
             evaluation = evaluation.merge(evaluate_at(operand.else_branch, value, MISSING_SEGMENT, "else"))
           end
         end
@@ -827,6 +893,14 @@ module Schemurai
         return evaluate(program, instance) unless @instance_path
 
         evaluate_at_with_path(program, instance, instance_segment, schema_segment, child_segment)
+      end
+
+      private def evaluate_child_at(program, instance, instance_segment, schema_segment, child_segment = MISSING_SEGMENT)
+        return evaluate_at(program, instance, instance_segment, schema_segment, child_segment).valid? if @errors
+
+        valid = evaluate_valid(program, instance)
+        @error_count += 1 unless valid
+        valid
       end
 
       private def evaluate_at_with_path(program, instance, instance_segment, schema_segment, child_segment)
