@@ -3,6 +3,7 @@
 [![Gem Version](https://badge.fury.io/rb/schemurai.svg?icon=si%3Arubygems)](https://badge.fury.io/rb/schemurai)
 [![test / rspec](https://github.com/oakcask/schemurai/actions/workflows/test--rspec.yaml/badge.svg)](https://github.com/oakcask/schemurai/actions/workflows/test--rspec.yaml)
 [![lint / rubocop](https://github.com/oakcask/schemurai/actions/workflows/lint--rubocop.yaml/badge.svg)](https://github.com/oakcask/schemurai/actions/workflows/lint--rubocop.yaml)
+[![lint / rbs](https://github.com/oakcask/schemurai/actions/workflows/lint--rbs.yaml/badge.svg)](https://github.com/oakcask/schemurai/actions/workflows/lint--rbs.yaml)
 
 A small, light-weight-dependency JSON Schema validator for Ruby supporting Draft 7,
 Draft 2019-09, and Draft 2020-12. It covers the required cases in the official
@@ -10,6 +11,8 @@ JSON-Schema-Test-Suite, as well as the applicable optional tests for numeric
 precision, ECMA-262 regular expressions, content validation, anchors, and dynamic
 references. The dialect is selected from the schema's `$schema` URI; schemas that
 omit `$schema` use Draft 7 for compatibility.
+
+Schemurai ships RBS declarations for its public API in `sig/schemurai.rbs`.
 
 ```ruby
 require "schemurai"

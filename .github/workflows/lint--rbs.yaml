@@ -1,0 +1,37 @@
+name: lint / rbs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/lint--rbs.yaml
+      - Gemfile
+      - Gemfile.lock
+      - sig/**/*
+  pull_request:
+    paths:
+      - .github/workflows/lint--rbs.yaml
+      - Gemfile
+      - Gemfile.lock
+      - sig/**/*
+
+permissions:
+  contents: read
+
+env:
+  BUNDLE_ONLY: type_check
+
+jobs:
+  rbs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          bundler-cache: true
+          cache-version: ${{ hashFiles('Gemfile.lock') }}
+      - name: Validate RBS signatures
+        run: bundle exec rbs -I sig validate

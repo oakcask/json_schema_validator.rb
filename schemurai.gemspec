@@ -20,7 +20,7 @@ Gem::Specification.new do |spec|
     "documentation_uri" => "https://rubydoc.info/gems/#{spec.name}/#{spec.version}",
     "rubygems_mfa_required" => "true"
   }
-  spec.files = Dir["lib/**/*", "README.md", "LICENSE"]
+  spec.files = Dir["lib/**/*", "sig/**/*", "README.md", "LICENSE"]
   spec.extra_rdoc_files = %w[README.md LICENSE]
   spec.rdoc_options = [
     "--main", "README.md",
