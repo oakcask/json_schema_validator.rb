@@ -1,9 +1,12 @@
 # Performance Benchmark
 
-`draft7.rb` measures this implementation against all 1,045 supported required
-and optional cases from the official Draft 7 suite. It verifies every expected
-result before measuring validator construction, end-to-end suite execution, and
-validation with constructed validators.
+The benchmark suite measures Schemurai performance for regression detection and
+performance development. Each runner verifies correctness before measuring.
+
+`draft7.rb`, `draft2019_09.rb`, and `draft2020_12.rb` measure all supported
+required and top-level optional cases from the corresponding official suite.
+They report validator construction, end-to-end suite execution, and validation
+with constructed validators.
 
 Run the current implementation with:
 
@@ -11,8 +14,7 @@ Run the current implementation with:
 bundle exec ruby benchmark/draft7.rb
 ```
 
-Set `BENCHMARK_ONLY` to `build`, `suite`, or `validate` to isolate one Draft 7
-workload, as with the newer-draft benchmarks below.
+Set `BENCHMARK_ONLY` to `build`, `suite`, or `validate` to isolate one workload.
 
 Use the validation-only workload and allocation runner to measure the VM
 backend against another checkout:
@@ -39,38 +41,22 @@ Set `BENCHMARK_DRAFT` to `draft7`, `draft2019-09`, or `draft2020-12`. Set
 `BENCHMARK_MODE` to `content` or `format` to isolate opt-in content assertions
 or the supported formats; the default mode is the complete dialect suite.
 
-To reproduce the comparison, set `JSON_SCHEMA_VALIDATOR_LIB` to the `lib`
-directory of a checkout at the baseline revision and run the same command.
+To reproduce a regression comparison, set `JSON_SCHEMA_VALIDATOR_LIB` to the
+`lib` directory of a checkout at the baseline revision and run the same command.
 
-## Product Comparison
-
-`draft6.rb` has a different purpose: it compares this product in speed, with
-`json_schemer` and `json-schema` over the mutually supported Draft 6 subset.
-
-Run it against the official Draft 6 test suite with:
+## Dialect workloads
 
 ```sh
-bundle exec ruby benchmark/draft6.rb
-```
-
-`draft2019_09.rb` and `draft2020_12.rb` compare this product with `json_schemer`
-over all supported required and top-level optional cases for their respective
-dialects. Both scripts verify every expected result before measuring build,
-end-to-end suite, and validation performance.
-
-```sh
+bundle exec ruby benchmark/draft7.rb
 bundle exec ruby benchmark/draft2019_09.rb
 bundle exec ruby benchmark/draft2020_12.rb
 ```
 
-`formats.rb` compares assertion performance for every format listed as supported
+`formats.rb` measures assertion performance for every format listed as supported
 in the project README: `date`, `time`, `date-time`, `duration`, `ipv4`, `ipv6`,
 `uuid`, `json-pointer`, and `relative-json-pointer`. It runs every case from the
-corresponding Draft 2020-12 official format files with format validation enabled
-in both products. It verifies this product against every expected result,
-measures only cases both products handle correctly, and reports any excluded
-product differences before measuring. Results are reported and compared
-separately for each format.
+corresponding Draft 2020-12 official format files with format validation enabled.
+Results are reported separately for each format.
 
 ```sh
 bundle exec ruby benchmark/formats.rb
@@ -93,8 +79,8 @@ SCHEMURAI_BACKEND=vm BENCHMARK_DRAFT=draft2020-12 \
   bundle exec ruby benchmark/content.rb
 ```
 
-`repeated_validation.rb` compares repeated validation throughput against
-`json_schemer` after compiling one Draft 2020-12 schema once:
+`repeated_validation.rb` measures repeated validation throughput after compiling
+one Draft 2020-12 schema once:
 
 ```sh
 bundle exec ruby benchmark/repeated_validation.rb
