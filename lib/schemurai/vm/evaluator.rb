@@ -10,6 +10,7 @@ module Schemurai
   module VM
     class Evaluator
       MISSING_SEGMENT = Object.new.freeze
+      DECIMAL_CACHE_LIMIT = 16
 
       def backend = :vm
 
@@ -21,6 +22,12 @@ module Schemurai
         @validate_format = format
         @regexps = nil
         @active = nil
+        @resolved_references = nil
+        @decimals = nil
+        @multiple_results = nil
+        @dynamic_scope = nil
+        @instance_path_buffer = nil
+        @schema_path_buffer = nil
       end
 
       def validate(instance)
@@ -40,9 +47,16 @@ module Schemurai
 
       private def prepare_evaluation(paths:)
         @error_count = 0
-        @dynamic_scope = nil
-        @instance_path = paths ? [] : nil
-        @schema_path = paths ? [] : nil
+        @dynamic_scope&.clear
+        if paths
+          (@instance_path_buffer ||= []).clear
+          (@schema_path_buffer ||= []).clear
+          @instance_path = @instance_path_buffer
+          @schema_path = @schema_path_buffer
+        else
+          @instance_path = nil
+          @schema_path = nil
+        end
       end
 
       private def evaluate_valid(program, instance)
@@ -52,13 +66,24 @@ module Schemurai
           return evaluate(program, instance).valid?
         end
 
-        entered_scope = enter_scope(program)
-        program.code.each do |opcode, operand, extra|
+        entered_scope = false
+        if program.tracks_dynamic_scope?
+          resource = program.node.resource
+          unless @dynamic_scope&.last.equal?(resource)
+            (@dynamic_scope ||= []) << resource
+            entered_scope = true
+          end
+        end
+        code = program.code
+        instruction_index = 0
+        while (instruction = code[instruction_index])
+          opcode = instruction[0]
+          operand = instruction[1]
           case opcode
           when :boolean
             return operand
           when :ref
-            target = @compiler.resolve(program, operand.value)
+            target = reference_target(program, operand)
             return false unless valid_reference?(program, target, instance)
           when :recursive_ref
             target = recursive_target(program, operand)
@@ -116,6 +141,7 @@ module Schemurai
           else
             raise "unknown VM instruction #{opcode.inspect}"
           end
+          instruction_index += 1
         end
         true
       rescue ResolutionError
@@ -127,9 +153,20 @@ module Schemurai
       private def evaluate(program, instance)
         before = @error_count
         evaluation = Evaluation.valid
-        entered_scope = enter_scope(program)
+        entered_scope = false
+        if program.tracks_dynamic_scope?
+          resource = program.node.resource
+          unless @dynamic_scope&.last.equal?(resource)
+            (@dynamic_scope ||= []) << resource
+            entered_scope = true
+          end
+        end
 
-        program.code.each do |opcode, operand, extra|
+        code = program.code
+        instruction_index = 0
+        while (instruction = code[instruction_index])
+          opcode = instruction[0]
+          operand = instruction[1]
           case opcode
           when :boolean
             if operand == false
@@ -175,18 +212,11 @@ module Schemurai
           else
             raise "unknown VM instruction #{opcode.inspect}"
           end
+          instruction_index += 1
         end
         (@error_count == before) ? evaluation : Evaluation.invalid
       ensure
         leave_scope if entered_scope
-      end
-
-      private def enter_scope(program)
-        return false unless program.tracks_dynamic_scope?
-        return false if @dynamic_scope&.last.equal?(program.node.resource)
-
-        (@dynamic_scope ||= []) << program.node.resource
-        true
       end
 
       private def leave_scope
@@ -194,7 +224,7 @@ module Schemurai
       end
 
       private def recursive_target(program, rules)
-        target = @compiler.resolve(program, rules.value)
+        target = reference_target(program, rules)
         return target unless rules.fragment == "" && target.recursive_anchor?
 
         dynamic = Array(@dynamic_scope).filter_map do |resource|
@@ -206,7 +236,7 @@ module Schemurai
       end
 
       private def dynamic_target(program, rules)
-        target = @compiler.resolve(program, rules.value)
+        target = reference_target(program, rules)
         fragment = rules.fragment
         return target if fragment.nil? || fragment.empty? || fragment.start_with?("/")
 
@@ -231,8 +261,13 @@ module Schemurai
         instances&.delete(instance_id) if activated
       end
 
+      private def reference_target(program, rules)
+        references = (@resolved_references ||= {}.compare_by_identity)
+        references.fetch(rules) { references[rules] = @compiler.resolve(program, rules.value) }
+      end
+
       private def evaluate_ref(source, rules, instance)
-        target = @compiler.resolve(source, rules.value)
+        target = reference_target(source, rules)
         evaluate_reference(source, target, instance, "$ref")
       rescue ResolutionError => error
         unresolved_reference("$ref", error)
@@ -301,19 +336,19 @@ module Schemurai
 
       private def valid_number?(rules, value)
         mask = rules.mask
-        actual = decimal(value)
+        actual = (mask & MULTIPLE_OF).zero? ? value : decimal(value)
         return false if (mask & MAXIMUM) != 0 && actual > rules.maximum
         return false if (mask & MINIMUM) != 0 && actual < rules.minimum
         return false if (mask & EXCLUSIVE_MAXIMUM) != 0 && actual >= rules.exclusive_maximum
         return false if (mask & EXCLUSIVE_MINIMUM) != 0 && actual <= rules.exclusive_minimum
         return true if (mask & MULTIPLE_OF).zero?
 
-        rules.multiple_of.positive? && actual.remainder(rules.multiple_of).zero?
+        valid_multiple?(rules, value)
       end
 
       private def check_number(rules, value)
         mask = rules.mask
-        actual = decimal(value)
+        actual = (mask & MULTIPLE_OF).zero? ? value : decimal(value)
         if (mask & MAXIMUM) != 0 && actual > rules.maximum
           add_error("maximum") { Internal::ErrorMessage.numeric_limit("maximum", rules.maximum) }
         end
@@ -333,8 +368,18 @@ module Schemurai
         return if (mask & MULTIPLE_OF).zero?
 
         divisor = rules.multiple_of
-        valid = divisor.positive? && actual.remainder(divisor).zero?
+        valid = valid_multiple?(rules, value)
         add_error("multipleOf") { Internal::ErrorMessage.multiple_of(divisor) } unless valid
+      end
+
+      private def valid_multiple?(rules, value)
+        results = (@multiple_results ||= {}.compare_by_identity)
+        values = (results[rules] ||= {})
+        return values[value] if values.key?(value)
+
+        values.clear if values.length >= DECIMAL_CACHE_LIMIT
+        divisor = rules.multiple_of
+        values[value] = divisor.positive? && decimal(value).remainder(divisor).zero?
       end
 
       private def valid_string?(rules, value)
@@ -524,10 +569,12 @@ module Schemurai
             matched = true
             return false unless evaluate_valid(child, property_value)
           end
-          patterns.each do |pattern, child|
-            next unless ecma_regexp(pattern).match?(name)
-            matched = true
-            return false unless evaluate_valid(child, property_value)
+          if patterns
+            patterns.each do |pattern, child|
+              next unless ecma_regexp(pattern).match?(name)
+              matched = true
+              return false unless evaluate_valid(child, property_value)
+            end
           end
           return false if !matched && additional && !evaluate_valid(additional, property_value)
         end
@@ -535,21 +582,27 @@ module Schemurai
         if (property_names = rules.property_names)
           value.each_key { |name| return false unless evaluate_valid(property_names, name) }
         end
-        rules.dependencies.each do |name, dependency|
-          next unless value.key?(name)
-          if dependency.is_a?(Array)
-            return false unless dependency.all? { |required_name| value.key?(required_name) }
-          else
-            return false unless evaluate_valid(dependency, value)
+        if (dependencies = rules.dependencies)
+          dependencies.each do |name, dependency|
+            next unless value.key?(name)
+            if dependency.is_a?(Array)
+              return false unless dependency.all? { |required_name| value.key?(required_name) }
+            else
+              return false unless evaluate_valid(dependency, value)
+            end
           end
         end
-        rules.dependent_required.each do |name, required_names|
-          next unless value.key?(name)
-          return false unless required_names.all? { |required_name| value.key?(required_name) }
+        if (dependent_required = rules.dependent_required)
+          dependent_required.each do |name, required_names|
+            next unless value.key?(name)
+            return false unless required_names.all? { |required_name| value.key?(required_name) }
+          end
         end
-        rules.dependent_schemas.each do |name, child|
-          next unless value.key?(name)
-          return false unless evaluate_valid(child, value)
+        if (dependent_schemas = rules.dependent_schemas)
+          dependent_schemas.each do |name, child|
+            next unless value.key?(name)
+            return false unless evaluate_valid(child, value)
+          end
         end
         true
       end
@@ -581,11 +634,13 @@ module Schemurai
             evaluate_at(child, property_value, name, "properties", name)
             evaluated << name
           end
-          patterns.each do |pattern, child|
-            next unless ecma_regexp(pattern).match?(name)
-            matched = true
-            evaluate_at(child, property_value, name, "patternProperties", pattern)
-            evaluated << name
+          if patterns
+            patterns.each do |pattern, child|
+              next unless ecma_regexp(pattern).match?(name)
+              matched = true
+              evaluate_at(child, property_value, name, "patternProperties", pattern)
+              evaluated << name
+            end
           end
           if !matched && (additional = rules.additional)
             evaluate_at(additional, property_value, name, "additionalProperties")
@@ -596,31 +651,37 @@ module Schemurai
         if (property_names = rules.property_names)
           value.each_key { |name| evaluate_at(property_names, name, name, "propertyNames") }
         end
-        rules.dependencies.each do |name, dependency|
-          next unless value.key?(name)
-          if dependency.is_a?(Array)
-            dependency.each do |required_name|
+        if (dependencies = rules.dependencies)
+          dependencies.each do |name, dependency|
+            next unless value.key?(name)
+            if dependency.is_a?(Array)
+              dependency.each do |required_name|
+                unless value.key?(required_name)
+                  add_error("dependencies") { Internal::ErrorMessage.dependent_required(name, required_name) }
+                end
+              end
+            else
+              result = evaluate_at(dependency, value, MISSING_SEGMENT, "dependencies", name)
+              evaluated.concat(result.evaluated_properties) if result.valid?
+            end
+          end
+        end
+        if (dependent_required = rules.dependent_required)
+          dependent_required.each do |name, required_names|
+            next unless value.key?(name)
+            required_names.each do |required_name|
               unless value.key?(required_name)
-                add_error("dependencies") { Internal::ErrorMessage.dependent_required(name, required_name) }
+                add_error("dependentRequired") { Internal::ErrorMessage.dependent_required(name, required_name) }
               end
             end
-          else
-            result = evaluate_at(dependency, value, MISSING_SEGMENT, "dependencies", name)
+          end
+        end
+        if (dependent_schemas = rules.dependent_schemas)
+          dependent_schemas.each do |name, child|
+            next unless value.key?(name)
+            result = evaluate_at(child, value, MISSING_SEGMENT, "dependentSchemas", name)
             evaluated.concat(result.evaluated_properties) if result.valid?
           end
-        end
-        rules.dependent_required.each do |name, required_names|
-          next unless value.key?(name)
-          required_names.each do |required_name|
-            unless value.key?(required_name)
-              add_error("dependentRequired") { Internal::ErrorMessage.dependent_required(name, required_name) }
-            end
-          end
-        end
-        rules.dependent_schemas.each do |name, child|
-          next unless value.key?(name)
-          result = evaluate_at(child, value, MISSING_SEGMENT, "dependentSchemas", name)
-          evaluated.concat(result.evaluated_properties) if result.valid?
         end
 
         combined = prior_evaluation.evaluated_properties | evaluated
@@ -749,7 +810,11 @@ module Schemurai
       private def decimal(value)
         return value if value.is_a?(Integer) || value.is_a?(Rational)
 
-        Rational(value.to_s)
+        decimals = (@decimals ||= {})
+        return decimals[value] if decimals.key?(value)
+
+        decimals.clear if decimals.length >= DECIMAL_CACHE_LIMIT
+        decimals[value] = Rational(value.to_s)
       end
 
       private def ecma_regexp(pattern)
@@ -803,7 +868,7 @@ module Schemurai
         pointer << "/" << segment.to_s.gsub("~", "~0").gsub("/", "~1")
       end
 
-      private_constant :MISSING_SEGMENT
+      private_constant :DECIMAL_CACHE_LIMIT, :MISSING_SEGMENT
     end
   end
 
