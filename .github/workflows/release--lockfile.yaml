@@ -29,7 +29,7 @@ jobs:
         with:
           token: ${{ steps.gh-token-gen.outputs.token }}
           submodules: true
-      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
       # release-please does not update the Bundler 4 CHECKSUMS entry for the
       # gem being released. Regenerate it whenever the release PR is updated.
       - run: bundle lock
