@@ -54,11 +54,8 @@ module Schemurai
 
     StringRules = Data.define(
       :max_length,
-      :has_max_length,
       :min_length,
-      :has_min_length,
       :pattern,
-      :has_pattern,
       :format,
       :format_assertion,
       :decode_base64,
@@ -67,9 +64,7 @@ module Schemurai
 
     ArrayRules = Data.define(
       :max_items,
-      :has_max_items,
       :min_items,
-      :has_min_items,
       :unique,
       :prefix_items,
       :items,
@@ -84,11 +79,8 @@ module Schemurai
 
     ObjectRules = Data.define(
       :max_properties,
-      :has_max_properties,
       :min_properties,
-      :has_min_properties,
       :required,
-      :has_required,
       :properties,
       :patterns,
       :additional,
@@ -102,9 +94,7 @@ module Schemurai
     ConditionalRules = Data.define(
       :condition,
       :then_branch,
-      :else_branch,
-      :has_then,
-      :has_else
+      :else_branch
     )
 
     class Program
@@ -280,9 +270,7 @@ module Schemurai
           ConditionalRules.new(
             compile(node.child("if")),
             schema.key?("then") ? compile(node.child("then")) : nil,
-            schema.key?("else") ? compile(node.child("else")) : nil,
-            schema.key?("then"),
-            schema.key?("else")
+            schema.key?("else") ? compile(node.child("else")) : nil
           )
         ]
       end
@@ -321,11 +309,8 @@ module Schemurai
       private def compile_string(node, schema)
         StringRules.new(
           schema["maxLength"],
-          schema.key?("maxLength"),
           schema["minLength"],
-          schema.key?("minLength"),
           snapshot(schema["pattern"]),
-          schema.key?("pattern"),
           node.format,
           node.dialect.format_assertion?,
           schema["contentEncoding"] == "base64",
@@ -344,9 +329,7 @@ module Schemurai
         end
         ArrayRules.new(
           schema["maxItems"],
-          schema.key?("maxItems"),
           schema["minItems"],
-          schema.key?("minItems"),
           schema["uniqueItems"],
           prefix_items,
           items,
@@ -363,11 +346,8 @@ module Schemurai
       private def compile_object(node, schema)
         ObjectRules.new(
           schema["maxProperties"],
-          schema.key?("maxProperties"),
           schema["minProperties"],
-          schema.key?("minProperties"),
           snapshot(schema["required"]),
-          schema.key?("required"),
           compile_map(node, schema, "properties"),
           compile_optional_map(node, schema, "patternProperties"),
           schema.key?("additionalProperties") ? compile(node.child("additionalProperties")) : nil,
