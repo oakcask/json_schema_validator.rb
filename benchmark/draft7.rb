@@ -2,6 +2,7 @@
 
 require "benchmark/ips"
 require "json"
+require_relative "support"
 
 root = File.expand_path("..", __dir__)
 $LOAD_PATH.unshift(ENV.fetch("JSON_SCHEMA_VALIDATOR_LIB", File.join(root, "lib")))
@@ -64,21 +65,21 @@ only = ENV["BENCHMARK_ONLY"]
 
 if only.nil? || only == "build"
   Benchmark.ips do |benchmark|
-    benchmark.config(time: time, warmup: warmup)
+    SchemuraiBenchmark.configure(benchmark, time: time, warmup: warmup)
     benchmark.report("lib build") { build(groups, remotes) }
   end
 end
 
 if only.nil? || only == "suite"
   Benchmark.ips do |benchmark|
-    benchmark.config(time: time, warmup: warmup)
+    SchemuraiBenchmark.configure(benchmark, time: time, warmup: warmup)
     benchmark.report("lib suite") { validate_all(build(groups, remotes)) }
   end
 end
 
 if only.nil? || only == "validate"
   Benchmark.ips do |benchmark|
-    benchmark.config(time: time, warmup: warmup)
+    SchemuraiBenchmark.configure(benchmark, time: time, warmup: warmup)
     benchmark.report("lib validate") { validate_all(compiled) }
   end
 end

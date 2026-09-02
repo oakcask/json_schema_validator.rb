@@ -1,0 +1,11 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../benchmark/comparison"
+
+SchemuraiBenchmark::Comparison.new(
+  baseline_lib: ENV.fetch("BASELINE_LIB"),
+  baseline_label: ENV.fetch("BASELINE_LABEL"),
+  candidate_label: ENV.fetch("CANDIDATE_LABEL"),
+  summary_path: ENV.fetch("GITHUB_STEP_SUMMARY")
+).run

@@ -1,0 +1,49 @@
+name: benchmark / pull request
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/benchmark--pull-request.yaml
+      - .gitmodules
+      - .ruby-version
+      - Gemfile
+      - Gemfile.lock
+      - schemurai.gemspec
+      - benchmark/**/*
+      - lib/**/*
+      - references/JSON-Schema-Test-Suite
+      - script/benchmark-compare
+      - spec/schemurai_benchmark/comparison_spec.rb
+
+permissions:
+  contents: read
+
+env:
+  BUNDLE_ONLY: default benchmark
+  BENCHMARK_TIME: "5"
+  BENCHMARK_WARMUP: "2"
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR merge ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/pull/${{ github.event.number }}/merge
+          submodules: true
+      - name: Check out base revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: refs/base
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          bundler-cache: true
+          cache-version: benchmark-${{ hashFiles('Gemfile.lock') }}
+      - name: Compare base and merge benchmarks
+        run: bundle exec ruby script/benchmark-compare
+        env:
+          BASELINE_LIB: refs/base/lib
+          BASELINE_LABEL: base (${{ github.event.pull_request.base.sha }})
+          CANDIDATE_LABEL: refs/pull/${{ github.event.number }}/merge (${{ github.sha }})
