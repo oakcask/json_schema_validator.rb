@@ -102,6 +102,8 @@ module Schemurai
 
       def initialize(node)
         @node = node
+        @tracks_evaluation = false
+        @tracks_dynamic_scope = false
         schema = node.schema
         @recursive_anchor = schema.is_a?(Hash) && schema["$recursiveAnchor"] == true
         @dynamic_anchor = if schema.is_a?(Hash) && schema["$dynamicAnchor"].is_a?(String)
@@ -109,26 +111,22 @@ module Schemurai
         end
       end
 
+      def emit(code, opcode, operand)
+        unless @tracks_evaluation
+          case opcode
+          when :array, :object, :typed_array, :typed_object
+            @tracks_evaluation = operand.unevaluated
+          end
+        end
+        @tracks_dynamic_scope ||= opcode == :ref || opcode == :recursive_ref || opcode == :dynamic_ref ||
+          dynamic_scope_operand?(operand)
+        code.push(opcode, operand)
+      end
+
       def finish(code)
-        @tracks_evaluation = code.any? do |instruction|
-          %i[array object typed_array typed_object].include?(instruction.first) && instruction[1].unevaluated
-        end
-        @tracks_dynamic_scope = code.any? do |opcode, operand|
-          opcode == :ref || opcode == :recursive_ref || opcode == :dynamic_ref || dynamic_scope_operand?(operand)
-        end
         flags = 0
         flags |= TRACKS_EVALUATION if @tracks_evaluation
         flags |= TRACKS_DYNAMIC_SCOPE if @tracks_dynamic_scope
-        instruction_count = code.length
-        code[instruction_count * 2] = nil
-        index = instruction_count - 1
-        while index >= 0
-          instruction = code[index]
-          offset = (index * 2) + 1
-          code[offset] = instruction[0]
-          code[offset + 1] = instruction[1]
-          index -= 1
-        end
         code[0] = flags
         @code = code.freeze
         freeze
@@ -189,7 +187,7 @@ module Schemurai
         @programs.fetch(node) do
           program = Program.new(node)
           @programs[node] = program
-          program.finish(compile_code(node))
+          program.finish(compile_code(node, program))
         end
       end
 
@@ -202,41 +200,41 @@ module Schemurai
         compile(@graph.resolve(program.node, reference))
       end
 
-      private def compile_code(node)
+      private def compile_code(node, program)
         schema = node.schema
-        return [[:boolean, schema]] if schema == true || schema == false
-        return [] unless schema.is_a?(Hash)
+        return program.emit([0], :boolean, schema) if schema == true || schema == false
+        return [0] unless schema.is_a?(Hash)
 
-        code = []
+        code = [0]
         if schema.key?("$ref")
-          code << [:ref, compile_reference(schema["$ref"])]
+          program.emit(code, :ref, compile_reference(schema["$ref"]))
           return code unless node.dialect.ref_siblings?
         end
-        code << [:recursive_ref, compile_reference(schema["$recursiveRef"])] if schema.key?("$recursiveRef")
-        code << [:dynamic_ref, compile_reference(schema["$dynamicRef"])] if schema.key?("$dynamicRef")
+        program.emit(code, :recursive_ref, compile_reference(schema["$recursiveRef"])) if schema.key?("$recursiveRef")
+        program.emit(code, :dynamic_ref, compile_reference(schema["$dynamicRef"])) if schema.key?("$dynamicRef")
 
         mask = node.keyword_mask
         categories = Schemurai.const_get(:Internal)::Dialect
-        code << compile_type(schema["type"]) if (mask & categories::TYPE) != 0 && schema.key?("type")
+        compile_type(code, program, schema["type"]) if (mask & categories::TYPE) != 0 && schema.key?("type")
         if (mask & categories::ENUM) != 0
-          code << [:enum, snapshot(schema["enum"])] if schema.key?("enum")
-          code << [:const, snapshot(schema["const"])] if schema.key?("const")
+          program.emit(code, :enum, snapshot(schema["enum"])) if schema.key?("enum")
+          program.emit(code, :const, snapshot(schema["const"])) if schema.key?("const")
         end
-        compile_combiners(code, node, schema) if (mask & categories::COMBINER) != 0
-        code << [:number, compile_number(schema)] if (mask & categories::NUMBER) != 0
+        compile_combiners(code, program, node, schema) if (mask & categories::COMBINER) != 0
+        program.emit(code, :number, compile_number(schema)) if (mask & categories::NUMBER) != 0
         if (mask & categories::STRING) != 0 || node.format
-          code << [:string, compile_string(node, schema)]
+          program.emit(code, :string, compile_string(node, schema))
         end
-        code << [:array, compile_array(node, schema)] if (mask & categories::ARRAY) != 0
-        code << [:object, compile_object(node, schema)] if (mask & categories::OBJECT) != 0
+        program.emit(code, :array, compile_array(node, schema)) if (mask & categories::ARRAY) != 0
+        program.emit(code, :object, compile_object(node, schema)) if (mask & categories::OBJECT) != 0
         fuse_type_instruction(code)
       end
 
       private def fuse_type_instruction(code)
-        index = 0
-        while index + 1 < code.length
-          type_opcode = code[index][0]
-          rules_opcode = code[index + 1][0]
+        index = 1
+        while index + 3 < code.length
+          type_opcode = code[index]
+          rules_opcode = code[index + 2]
           fused_opcode = case type_opcode
           when :type_object then :typed_object if rules_opcode == :object
           when :type_array then :typed_array if rules_opcode == :array
@@ -245,34 +243,35 @@ module Schemurai
           when :type_integer then :typed_integer if rules_opcode == :number
           end
           if fused_opcode
-            code[index][0] = fused_opcode
-            code[index][1] = code[index + 1][1]
-            code.delete_at(index + 1)
+            code[index] = fused_opcode
+            code[index + 1] = code[index + 3]
+            code.slice!(index + 2, 2)
             break
           end
-          index += 1
+          index += 2
         end
         code
       end
 
-      private def compile_combiners(code, node, schema)
+      private def compile_combiners(code, program, node, schema)
         %w[allOf anyOf oneOf].each do |keyword|
           next unless schema.key?(keyword)
 
           children = schema[keyword].each_index.map { |index| compile(node.child(keyword, index)) }
-          code << [keyword.to_sym, children]
+          program.emit(code, keyword.to_sym, children)
         end
-        code << [:not, compile(node.child("not"))] if schema.key?("not")
+        program.emit(code, :not, compile(node.child("not"))) if schema.key?("not")
         return unless schema.key?("if")
 
-        code << [
+        program.emit(
+          code,
           :conditional,
           ConditionalRules.new(
             compile(node.child("if")),
             schema.key?("then") ? compile(node.child("then")) : nil,
             schema.key?("else") ? compile(node.child("else")) : nil
           )
-        ]
+        )
       end
 
       private def compile_number(schema)
@@ -299,11 +298,11 @@ module Schemurai
         ReferenceRules.new(value: value, fragment: fragment)
       end
 
-      private def compile_type(types)
-        return [TYPE_OPCODES.fetch(types)] unless types.is_a?(Array)
+      private def compile_type(code, program, types)
+        return program.emit(code, TYPE_OPCODES.fetch(types), nil) unless types.is_a?(Array)
 
         mask = types.reduce(0) { |result, type| result | TYPE_BITS.fetch(type) }
-        [:types, TypeRules.new(mask: mask, names: snapshot(types))]
+        program.emit(code, :types, TypeRules.new(mask: mask, names: snapshot(types)))
       end
 
       private def compile_string(node, schema)
