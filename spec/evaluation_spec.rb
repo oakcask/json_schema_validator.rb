@@ -30,5 +30,22 @@ RSpec.describe "Schemurai::Evaluation" do
         expect(combined.evaluated_properties).to be_empty
       end
     end
+
+    context "with an empty successful evaluation" do
+      let(:right) { evaluation_class.valid }
+
+      it "reuses the annotated evaluation" do
+        expect(combined).to equal(left)
+      end
+    end
+
+    context "when only the right evaluation has annotations" do
+      let(:left) { evaluation_class.valid }
+      let(:right) { evaluation_class.valid(evaluated_properties: ["count"], evaluated_items: [1]) }
+
+      it "reuses the annotated evaluation" do
+        expect(combined).to equal(right)
+      end
+    end
   end
 end

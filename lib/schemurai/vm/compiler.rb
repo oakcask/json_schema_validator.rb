@@ -27,6 +27,9 @@ module Schemurai
     TYPE_INTEGER = 1 << 5
     TYPE_STRING = 1 << 6
 
+    TRACKS_EVALUATION = 1 << 0
+    TRACKS_DYNAMIC_SCOPE = 1 << 1
+
     TYPE_BITS = {
       "null" => TYPE_NULL,
       "boolean" => TYPE_BOOLEAN,
@@ -117,13 +120,27 @@ module Schemurai
       end
 
       def finish(code)
-        @code = code.map(&:freeze).freeze
         @tracks_evaluation = code.any? do |instruction|
-          %i[array object].include?(instruction.first) && instruction[1].unevaluated
+          %i[array object typed_array typed_object].include?(instruction.first) && instruction[1].unevaluated
         end
         @tracks_dynamic_scope = code.any? do |opcode, operand|
           opcode == :ref || opcode == :recursive_ref || opcode == :dynamic_ref || dynamic_scope_operand?(operand)
         end
+        flags = 0
+        flags |= TRACKS_EVALUATION if @tracks_evaluation
+        flags |= TRACKS_DYNAMIC_SCOPE if @tracks_dynamic_scope
+        instruction_count = code.length
+        code[instruction_count * 2] = nil
+        index = instruction_count - 1
+        while index >= 0
+          instruction = code[index]
+          offset = (index * 2) + 1
+          code[offset] = instruction[0]
+          code[offset + 1] = instruction[1]
+          index -= 1
+        end
+        code[0] = flags
+        @code = code.freeze
         freeze
       end
 
@@ -222,6 +239,29 @@ module Schemurai
         end
         code << [:array, compile_array(node, schema)] if (mask & categories::ARRAY) != 0
         code << [:object, compile_object(node, schema)] if (mask & categories::OBJECT) != 0
+        fuse_type_instruction(code)
+      end
+
+      private def fuse_type_instruction(code)
+        index = 0
+        while index + 1 < code.length
+          type_opcode = code[index][0]
+          rules_opcode = code[index + 1][0]
+          fused_opcode = case type_opcode
+          when :type_object then :typed_object if rules_opcode == :object
+          when :type_array then :typed_array if rules_opcode == :array
+          when :type_string then :typed_string if rules_opcode == :string
+          when :type_number then :typed_number if rules_opcode == :number
+          when :type_integer then :typed_integer if rules_opcode == :number
+          end
+          if fused_opcode
+            code[index][0] = fused_opcode
+            code[index][1] = code[index + 1][1]
+            code.delete_at(index + 1)
+            break
+          end
+          index += 1
+        end
         code
       end
 

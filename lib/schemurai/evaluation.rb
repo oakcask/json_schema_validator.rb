@@ -34,10 +34,27 @@ module Schemurai
 
     def merge(other)
       return self.class.invalid unless valid? && other.valid?
+      return self if other.evaluated_properties.empty? && other.evaluated_items.empty?
+      return other if evaluated_properties.empty? && evaluated_items.empty?
+
+      properties = if evaluated_properties.empty?
+        other.evaluated_properties
+      elsif other.evaluated_properties.empty?
+        evaluated_properties
+      else
+        evaluated_properties | other.evaluated_properties
+      end
+      items = if evaluated_items.empty?
+        other.evaluated_items
+      elsif other.evaluated_items.empty?
+        evaluated_items
+      else
+        evaluated_items | other.evaluated_items
+      end
 
       self.class.valid(
-        evaluated_properties: (evaluated_properties | other.evaluated_properties),
-        evaluated_items: (evaluated_items | other.evaluated_items)
+        evaluated_properties: properties,
+        evaluated_items: items
       )
     end
   end
