@@ -8,8 +8,6 @@ require "tmpdir"
 module SchemuraiBenchmark
   class Comparison
     DRAFTS = {
-      "Draft 7" => "draft7.rb",
-      "Draft 2019-09" => "draft2019_09.rb",
       "Draft 2020-12" => "draft2020_12.rb"
     }.freeze
     BACKENDS = %w[ruby vm].freeze

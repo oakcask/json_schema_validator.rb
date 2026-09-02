@@ -22,6 +22,10 @@ RSpec.describe SchemuraiBenchmark::Comparison do
     )
   end
 
+  it "compares only Draft 2020-12" do
+    expect(described_class::DRAFTS).to eq("Draft 2020-12" => "draft2020_12.rb")
+  end
+
   describe "#markdown" do
     it "reports throughput and the signed change for every result" do
       expect(comparison.markdown([result])).to include(
