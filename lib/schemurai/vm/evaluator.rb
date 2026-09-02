@@ -182,8 +182,8 @@ module Schemurai
             return false if evaluate_valid(operand, instance)
           when :conditional
             if evaluate_valid(operand.condition, instance)
-              return false if operand.has_then && !evaluate_valid(operand.then_branch, instance)
-            elsif operand.has_else && !evaluate_valid(operand.else_branch, instance)
+              return false if operand.then_branch && !evaluate_valid(operand.then_branch, instance)
+            elsif operand.else_branch && !evaluate_valid(operand.else_branch, instance)
               return false
             end
           when :number
@@ -494,9 +494,9 @@ module Schemurai
 
       private def valid_string?(rules, value)
         length = value.length
-        return false if rules.has_max_length && length > rules.max_length
-        return false if rules.has_min_length && length < rules.min_length
-        return false if rules.has_pattern && !ecma_regexp(rules.pattern).match?(value)
+        return false if rules.max_length && length > rules.max_length
+        return false if rules.min_length && length < rules.min_length
+        return false if rules.pattern && !ecma_regexp(rules.pattern).match?(value)
         if rules.format && (@validate_format || rules.format_assertion)
           return false unless rules.format.call(value)
         end
@@ -511,13 +511,13 @@ module Schemurai
 
       private def check_string(rules, value)
         length = value.length
-        if rules.has_max_length && length > rules.max_length
+        if rules.max_length && length > rules.max_length
           add_error("maxLength") { Internal::ErrorMessage.size("maxLength", rules.max_length, length) }
         end
-        if rules.has_min_length && length < rules.min_length
+        if rules.min_length && length < rules.min_length
           add_error("minLength") { Internal::ErrorMessage.size("minLength", rules.min_length, length) }
         end
-        if rules.has_pattern && !ecma_regexp(rules.pattern).match?(value)
+        if rules.pattern && !ecma_regexp(rules.pattern).match?(value)
           add_error("pattern") { Internal::ErrorMessage.pattern(rules.pattern) }
         end
         if rules.format && (@validate_format || rules.format_assertion) && !rules.format.call(value)
@@ -550,8 +550,8 @@ module Schemurai
 
       private def valid_array?(rules, value)
         length = value.length
-        return false if rules.has_max_items && length > rules.max_items
-        return false if rules.has_min_items && length < rules.min_items
+        return false if rules.max_items && length > rules.max_items
+        return false if rules.min_items && length < rules.min_items
         if rules.unique
           index = 1
           while index < length
@@ -606,12 +606,12 @@ module Schemurai
 
       private def check_array(rules, value, prior_evaluation)
         evaluation = nil
-        if rules.has_max_items && value.length > rules.max_items
+        if rules.max_items && value.length > rules.max_items
           return Evaluation.invalid unless @errors
 
           add_error("maxItems") { Internal::ErrorMessage.size("maxItems", rules.max_items, value.length) }
         end
-        if rules.has_min_items && value.length < rules.min_items
+        if rules.min_items && value.length < rules.min_items
           return Evaluation.invalid unless @errors
 
           add_error("minItems") { Internal::ErrorMessage.size("minItems", rules.min_items, value.length) }
@@ -711,9 +711,9 @@ module Schemurai
 
       private def valid_object?(rules, value)
         length = value.length
-        return false if rules.has_max_properties && length > rules.max_properties
-        return false if rules.has_min_properties && length < rules.min_properties
-        if rules.has_required && !rules.required.all? { |name| value.key?(name) }
+        return false if rules.max_properties && length > rules.max_properties
+        return false if rules.min_properties && length < rules.min_properties
+        if rules.required && !rules.required.all? { |name| value.key?(name) }
           return false
         end
 
@@ -768,14 +768,14 @@ module Schemurai
 
       private def check_object(rules, value, prior_evaluation)
         evaluation = nil
-        if rules.has_max_properties && value.length > rules.max_properties
+        if rules.max_properties && value.length > rules.max_properties
           return Evaluation.invalid unless @errors
 
           add_error("maxProperties") do
             Internal::ErrorMessage.size("maxProperties", rules.max_properties, value.length)
           end
         end
-        if rules.has_min_properties && value.length < rules.min_properties
+        if rules.min_properties && value.length < rules.min_properties
           return Evaluation.invalid unless @errors
 
           add_error("minProperties") do
@@ -926,9 +926,9 @@ module Schemurai
           condition = trial_at(operand.condition, value, MISSING_SEGMENT, "if")
           condition_valid = condition.valid?
           evaluation = evaluation.merge(condition) if condition_valid
-          if condition_valid && operand.has_then
+          if condition_valid && operand.then_branch
             evaluation = evaluation.merge(evaluate_at(operand.then_branch, value, MISSING_SEGMENT, "then"))
-          elsif !condition_valid && operand.has_else
+          elsif !condition_valid && operand.else_branch
             evaluation = evaluation.merge(evaluate_at(operand.else_branch, value, MISSING_SEGMENT, "else"))
           end
         end
