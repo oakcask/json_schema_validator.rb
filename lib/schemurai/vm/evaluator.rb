@@ -18,6 +18,7 @@ module Schemurai
         @graph = graph
         @compiler = compiler
         @root = root
+        @root_tracks_evaluation = root.tracks_evaluation?
         @validate_content = content
         @validate_format = format
         @regexps = nil
@@ -41,7 +42,17 @@ module Schemurai
 
       def valid?(instance)
         @errors = nil
-        prepare_evaluation(paths: @root.tracks_evaluation?)
+        @error_count = 0
+        @dynamic_scope&.clear
+        if @root_tracks_evaluation
+          (@instance_path_buffer ||= []).clear
+          (@schema_path_buffer ||= []).clear
+          @instance_path = @instance_path_buffer
+          @schema_path = @schema_path_buffer
+        else
+          @instance_path = nil
+          @schema_path = nil
+        end
         evaluate_valid(@root, instance)
       end
 
@@ -60,25 +71,25 @@ module Schemurai
       end
 
       private def evaluate_valid(program, instance)
-        if program.tracks_evaluation?
+        code = program.code
+        flags = code[0]
+        if (flags & TRACKS_EVALUATION) != 0
           @instance_path ||= []
           @schema_path ||= []
           return evaluate(program, instance).valid?
         end
 
         entered_scope = false
-        if program.tracks_dynamic_scope?
+        if (flags & TRACKS_DYNAMIC_SCOPE) != 0
           resource = program.node.resource
           unless @dynamic_scope&.last.equal?(resource)
             (@dynamic_scope ||= []) << resource
             entered_scope = true
           end
         end
-        code = program.code
-        instruction_index = 0
-        while (instruction = code[instruction_index])
-          opcode = instruction[0]
-          operand = instruction[1]
+        instruction_index = 1
+        while (opcode = code[instruction_index])
+          operand = code[instruction_index + 1]
           case opcode
           when :boolean
             return operand
@@ -100,11 +111,22 @@ module Schemurai
           when :type_array
             return false unless instance.is_a?(Array)
           when :type_number
-            return false unless number?(instance)
+            return false unless instance.is_a?(Numeric) && !instance.is_a?(Complex)
           when :type_integer
-            return false unless integer?(instance)
+            return false unless instance.is_a?(Numeric) && !instance.is_a?(Complex) && instance.finite? && instance.to_i == instance
           when :type_string
             return false unless instance.is_a?(String)
+          when :typed_number
+            return false unless instance.is_a?(Numeric) && !instance.is_a?(Complex) && valid_number?(operand, instance)
+          when :typed_integer
+            return false unless instance.is_a?(Numeric) && !instance.is_a?(Complex) && instance.finite? &&
+              instance.to_i == instance && valid_number?(operand, instance)
+          when :typed_string
+            return false unless instance.is_a?(String) && valid_string?(operand, instance)
+          when :typed_array
+            return false unless instance.is_a?(Array) && valid_array?(operand, instance)
+          when :typed_object
+            return false unless instance.is_a?(Hash) && valid_object?(operand, instance)
           when :types
             return false if (operand.mask & instance_type_mask(instance, integer: (operand.mask & TYPE_INTEGER) != 0)).zero?
           when :enum
@@ -141,7 +163,7 @@ module Schemurai
           else
             raise "unknown VM instruction #{opcode.inspect}"
           end
-          instruction_index += 1
+          instruction_index += 2
         end
         true
       rescue ResolutionError
@@ -153,8 +175,10 @@ module Schemurai
       private def evaluate(program, instance)
         before = @error_count
         evaluation = Evaluation.valid
+        code = program.code
+        flags = code[0]
         entered_scope = false
-        if program.tracks_dynamic_scope?
+        if (flags & TRACKS_DYNAMIC_SCOPE) != 0
           resource = program.node.resource
           unless @dynamic_scope&.last.equal?(resource)
             (@dynamic_scope ||= []) << resource
@@ -162,11 +186,9 @@ module Schemurai
           end
         end
 
-        code = program.code
-        instruction_index = 0
-        while (instruction = code[instruction_index])
-          opcode = instruction[0]
-          operand = instruction[1]
+        instruction_index = 1
+        while (opcode = code[instruction_index])
+          operand = code[instruction_index + 1]
           case opcode
           when :boolean
             if operand == false
@@ -193,6 +215,38 @@ module Schemurai
             check_compiled_type("integer", integer?(instance), instance)
           when :type_string
             check_compiled_type("string", instance.is_a?(String), instance)
+          when :typed_number
+            if number?(instance)
+              check_number(operand, instance)
+            else
+              check_compiled_type("number", false, instance)
+            end
+          when :typed_integer
+            if instance.is_a?(Numeric) && !instance.is_a?(Complex)
+              integer = instance.finite? && instance.to_i == instance
+              check_compiled_type("integer", integer, instance)
+              check_number(operand, instance)
+            else
+              check_compiled_type("integer", false, instance)
+            end
+          when :typed_string
+            if instance.is_a?(String)
+              check_string(operand, instance)
+            else
+              check_compiled_type("string", false, instance)
+            end
+          when :typed_array
+            if instance.is_a?(Array)
+              evaluation = evaluation.merge(check_array(operand, instance, evaluation))
+            else
+              check_compiled_type("array", false, instance)
+            end
+          when :typed_object
+            if instance.is_a?(Hash)
+              evaluation = evaluation.merge(check_object(operand, instance, evaluation))
+            else
+              check_compiled_type("object", false, instance)
+            end
           when :types
             check_compiled_types(operand, instance)
           when :enum
@@ -212,7 +266,7 @@ module Schemurai
           else
             raise "unknown VM instruction #{opcode.inspect}"
           end
-          instruction_index += 1
+          instruction_index += 2
         end
         (@error_count == before) ? evaluation : Evaluation.invalid
       ensure
@@ -387,10 +441,12 @@ module Schemurai
         return false if rules.has_max_length && length > rules.max_length
         return false if rules.has_min_length && length < rules.min_length
         return false if rules.has_pattern && !ecma_regexp(rules.pattern).match?(value)
-        if format_asserted?(rules)
+        if rules.format && (@validate_format || rules.format_assertion)
           return false unless rules.format.call(value)
         end
-        return valid_content?(rules, value) if @validate_content
+        if @validate_content && (rules.decode_base64 || rules.parse_json)
+          return valid_content?(rules, value)
+        end
 
         true
       rescue RegexpError, IPAddr::InvalidAddressError
@@ -408,16 +464,12 @@ module Schemurai
         if rules.has_pattern && !ecma_regexp(rules.pattern).match?(value)
           add_error("pattern") { Internal::ErrorMessage.pattern(rules.pattern) }
         end
-        if format_asserted?(rules) && !rules.format.call(value)
+        if rules.format && (@validate_format || rules.format_assertion) && !rules.format.call(value)
           add_error("format") { Internal::ErrorMessage.format(rules.format.name) }
         end
-        check_content(rules, value) if @validate_content
+        check_content(rules, value) if @validate_content && (rules.decode_base64 || rules.parse_json)
       rescue RegexpError
         add_error("pattern") { Internal::ErrorMessage.invalid_pattern(rules.pattern) }
-      end
-
-      private def format_asserted?(rules)
-        (@validate_format || rules.format_assertion) && !rules.format.nil?
       end
 
       private def valid_content?(rules, value)
@@ -445,8 +497,14 @@ module Schemurai
         return false if rules.has_max_items && length > rules.max_items
         return false if rules.has_min_items && length < rules.min_items
         if rules.unique
-          value.each_with_index do |item, index|
-            return false if value[0...index].any? { |previous| json_equal?(previous, item) }
+          index = 1
+          while index < length
+            previous_index = 0
+            while previous_index < index
+              return false if json_equal?(value[previous_index], value[index])
+              previous_index += 1
+            end
+            index += 1
           end
         end
 
@@ -464,14 +522,18 @@ module Schemurai
             return false unless evaluate_valid(child, value[index])
           end
           if length > items.length && (additional = rules.additional)
-            (items.length...length).each do |index|
+            index = items.length
+            while index < length
               return false unless evaluate_valid(additional, value[index])
+              index += 1
             end
           end
         elsif items
           start = rules.prefix_items&.length || 0
-          (start...length).each do |index|
+          index = start
+          while index < length
             return false unless evaluate_valid(items, value[index])
+            index += 1
           end
         end
 
@@ -495,8 +557,18 @@ module Schemurai
           add_error("minItems") { Internal::ErrorMessage.size("minItems", rules.min_items, value.length) }
         end
         if rules.unique
-          duplicate = value.each_with_index.any? do |item, index|
-            value[0...index].any? { |previous| json_equal?(previous, item) }
+          duplicate = false
+          index = 1
+          while index < value.length && !duplicate
+            previous_index = 0
+            while previous_index < index
+              if json_equal?(value[previous_index], value[index])
+                duplicate = true
+                break
+              end
+              previous_index += 1
+            end
+            index += 1
           end
           add_error("uniqueItems") { Internal::ErrorMessage.unique_items } if duplicate
         end
@@ -563,20 +635,22 @@ module Schemurai
         properties = rules.properties
         patterns = rules.patterns
         additional = rules.additional
-        value.each do |name, property_value|
-          matched = false
-          if (child = properties[name])
-            matched = true
-            return false unless evaluate_valid(child, property_value)
-          end
-          if patterns
-            patterns.each do |pattern, child|
-              next unless ecma_regexp(pattern).match?(name)
+        unless properties.empty? && patterns.nil? && additional.nil?
+          value.each do |name, property_value|
+            matched = false
+            if (child = properties[name])
               matched = true
               return false unless evaluate_valid(child, property_value)
             end
+            if patterns
+              patterns.each do |pattern, child|
+                next unless ecma_regexp(pattern).match?(name)
+                matched = true
+                return false unless evaluate_valid(child, property_value)
+              end
+            end
+            return false if !matched && additional && !evaluate_valid(additional, property_value)
           end
-          return false if !matched && additional && !evaluate_valid(additional, property_value)
         end
 
         if (property_names = rules.property_names)
@@ -787,24 +861,28 @@ module Schemurai
       end
 
       private def json_equal?(left, right)
-        return false if json_kind(left) != json_kind(right)
+        if left.is_a?(Numeric) && !left.is_a?(Complex)
+          return right.is_a?(Numeric) && !right.is_a?(Complex) && left == right
+        end
+        return false unless left.instance_of?(right.class)
+
         case left
         when Hash
           left.length == right.length && left.all? do |key, value|
             right.key?(key) && json_equal?(value, right[key])
           end
         when Array
-          left.length == right.length && left.each_index.all? { |index| json_equal?(left[index], right[index]) }
+          return false unless left.length == right.length
+
+          index = 0
+          while index < left.length
+            return false unless json_equal?(left[index], right[index])
+            index += 1
+          end
+          true
         else
           left == right
         end
-      end
-
-      private def json_kind(value)
-        return :number if number?(value)
-        return :boolean if value == true || value == false
-
-        value.class
       end
 
       private def decimal(value)

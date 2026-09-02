@@ -10,12 +10,12 @@ RSpec.describe "the VM backend" do
     )
     evaluator = validator.instance_variable_get(:@evaluator)
     program = evaluator.instance_variable_get(:@root)
-    object_rules = program.code.assoc(:object).fetch(1)
+    object_rules = program.code.fetch(2)
 
-    expect(program.code.map(&:first)).to eq(%i[type_object object])
+    expect(program.code.fetch(1)).to eq(:typed_object)
     expect(program.code).to be_frozen
     expect(program.code).to all(be_frozen)
-    expect(object_rules.properties.fetch("name").code.map(&:first)).to eq([:type_string])
+    expect(object_rules.properties.fetch("name").code.values_at(1, 2)).to eq([:type_string, nil])
   end
 
   it "executes the compiled program after the source schema changes", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
@@ -26,6 +26,12 @@ RSpec.describe "the VM backend" do
     expect(validator.valid?(1)).to be(true)
     expect(validator.valid?(1.5)).to be(false)
     expect(validator.validate(1.5).errors.map(&:keyword)).to eq(["type"])
+  end
+
+  it "preserves detailed errors for fused type and constraint instructions" do
+    validator = Schemurai.compile({"type" => "integer", "minimum" => 0}, backend: :vm)
+
+    expect(validator.validate(-1.5).errors.map(&:keyword)).to eq(%w[type minimum])
   end
 
   it "snapshots nested mutable operands without freezing the source schema", :aggregate_failures do # rubocop:disable RSpec/ExampleLength

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "base64"
 require "json"
 
 root = File.expand_path("..", __dir__)
@@ -14,16 +15,54 @@ remotes = Dir[File.join(remote_root, "**", "*.json")].to_h do |file|
   ["http://localhost:1234/#{relative}", JSON.parse(File.read(file))]
 end
 
-required_files = Dir[File.join(suite_root, "tests", "draft7", "*.json")]
-optional_files = Dir[File.join(suite_root, "tests", "draft7", "optional", "*.json")]
+draft = ENV.fetch("BENCHMARK_DRAFT", "draft7")
+drafts = %w[draft7 draft2019-09 draft2020-12]
+raise "BENCHMARK_DRAFT must be one of: #{drafts.join(", ")}" unless drafts.include?(draft)
 
-groups = (required_files.sort + optional_files.sort).flat_map do |file|
-  content = file.include?("/optional/")
+mode = ENV.fetch("BENCHMARK_MODE", "all")
+modes = %w[all content format]
+raise "BENCHMARK_MODE must be one of: #{modes.join(", ")}" unless modes.include?(mode)
+
+test_root = File.join(suite_root, "tests", draft)
+files = case mode
+when "all"
+  Dir[File.join(test_root, "*.json")] + Dir[File.join(test_root, "optional", "*.json")]
+when "content"
+  candidates = [File.join(test_root, "content.json"), File.join(test_root, "optional", "content.json")]
+  [candidates.find { |file| File.file?(file) } || raise("content tests unavailable for #{draft}")]
+when "format"
+  formats = %w[date time date-time duration ipv4 ipv6 uuid json-pointer relative-json-pointer]
+  formats.map { |format| File.join(test_root, "optional", "format", "#{format}.json") }.select do |file|
+    File.file?(file)
+  end
+end
+
+groups = files.sort.flat_map do |file|
+  content = mode == "content" || (mode == "all" && file.include?("/optional/"))
   JSON.parse(File.read(file)).map do |group|
+    schema = group.fetch("schema")
+    tests = if mode == "content"
+      group.fetch("tests").map do |test|
+        data = test.fetch("data")
+        valid = true
+        if data.is_a?(String)
+          begin
+            decoded = (schema["contentEncoding"] == "base64") ? Base64.strict_decode64(data) : data
+            JSON.parse(decoded) if schema["contentMediaType"] == "application/json"
+          rescue ArgumentError, JSON::ParserError
+            valid = false
+          end
+        end
+        test.merge("valid" => valid)
+      end
+    else
+      group.fetch("tests")
+    end
     {
-      schema: group.fetch("schema"),
-      tests: group.fetch("tests"),
-      content: content
+      schema: schema,
+      tests: tests,
+      content: content,
+      format: mode == "format"
     }
   end
 end
@@ -32,7 +71,11 @@ def build(groups, remotes)
   registry = Schemurai::SchemaRegistry.new(schemas: remotes)
   groups.map do |group|
     group.merge(
-      validator: registry.compile(group.fetch(:schema), content: group.fetch(:content))
+      validator: registry.compile(
+        group.fetch(:schema),
+        content: group.fetch(:content),
+        format: group.fetch(:format)
+      )
     )
   end
 end
@@ -68,7 +111,7 @@ measurements = {
   "lib validate" => allocations(iterations) { validate_all(compiled) }
 }
 
-puts "JSON-Schema-Test-Suite Draft 7 allocations"
+puts "JSON-Schema-Test-Suite #{draft} #{mode} allocations"
 puts "#{groups.length} schemas, #{groups.sum { |group| group.fetch(:tests).length }} validation cases"
 puts "#{iterations} iterations"
 measurements.each do |name, total|

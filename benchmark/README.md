@@ -35,6 +35,10 @@ Set `BENCHMARK_ITERATIONS` to control the number of measured iterations. The
 default is 20. The script warms constructed validators before measuring and
 uses `GC.stat(:total_allocated_objects)`, so it requires no profiler gem.
 
+Set `BENCHMARK_DRAFT` to `draft7`, `draft2019-09`, or `draft2020-12`. Set
+`BENCHMARK_MODE` to `content` or `format` to isolate opt-in content assertions
+or the supported formats; the default mode is the complete dialect suite.
+
 To reproduce the comparison, set `JSON_SCHEMA_VALIDATOR_LIB` to the `lib`
 directory of a checkout at the baseline revision and run the same command.
 
@@ -77,6 +81,16 @@ retaining the same correctness checks and workloads.
 
 ```sh
 BENCHMARK_FORMAT=date bundle exec ruby benchmark/formats.rb
+```
+
+`content.rb` measures opt-in Base64 and JSON content assertions against the
+official content cases. Newer drafts specify these keywords as annotations, so
+the runner derives the expected opt-in assertion result independently. Select a
+dialect with `BENCHMARK_DRAFT`:
+
+```sh
+SCHEMURAI_BACKEND=vm BENCHMARK_DRAFT=draft2020-12 \
+  bundle exec ruby benchmark/content.rb
 ```
 
 `repeated_validation.rb` compares repeated validation throughput against
