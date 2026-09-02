@@ -18,7 +18,6 @@ module Schemurai
         @graph = graph
         @compiler = compiler
         @root = root
-        @root_tracks_evaluation = root.tracks_evaluation?
         @validate_content = content
         @validate_format = format
         @regexps = nil
@@ -44,15 +43,8 @@ module Schemurai
         @errors = nil
         @error_count = 0
         @dynamic_scope&.clear
-        if @root_tracks_evaluation
-          (@instance_path_buffer ||= []).clear
-          (@schema_path_buffer ||= []).clear
-          @instance_path = @instance_path_buffer
-          @schema_path = @schema_path_buffer
-        else
-          @instance_path = nil
-          @schema_path = nil
-        end
+        @instance_path = nil
+        @schema_path = nil
         evaluate_valid(@root, instance)
       end
 
@@ -73,18 +65,16 @@ module Schemurai
       private def evaluate_valid(program, instance)
         code = program.code
         flags = code[0]
-        if (flags & TRACKS_EVALUATION) != 0
-          @instance_path ||= []
-          @schema_path ||= []
-          return evaluate(program, instance).valid?
-        end
-
         entered_scope = false
-        if (flags & TRACKS_DYNAMIC_SCOPE) != 0
-          resource = program.node.resource
-          unless @dynamic_scope&.last.equal?(resource)
-            (@dynamic_scope ||= []) << resource
-            entered_scope = true
+        unless flags.zero?
+          return evaluate(program, instance).valid? if (flags & TRACKS_EVALUATION) != 0
+
+          if (flags & TRACKS_DYNAMIC_SCOPE) != 0
+            resource = program.node.resource
+            unless @dynamic_scope&.last.equal?(resource)
+              (@dynamic_scope ||= []) << resource
+              entered_scope = true
+            end
           end
         end
         instruction_index = 1
@@ -614,14 +604,23 @@ module Schemurai
           evaluated.concat(matched)
         end
 
-        combined = prior_evaluation.evaluated_items | evaluated
         if (unevaluated = rules.unevaluated)
-          ((0...value.length).to_a - combined).each do |index|
+          prior_items = prior_evaluation.evaluated_items
+          index = 0
+          while index < value.length
+            if prior_items.include?(index) || evaluated.include?(index)
+              index += 1
+              next
+            end
             evaluate_at(unevaluated, value[index], index, "unevaluatedItems")
             evaluated << index
+            index += 1
           end
         end
-        Evaluation.valid(evaluated_items: evaluated.uniq)
+        return Evaluation.valid if evaluated.empty?
+
+        evaluated.uniq!
+        Evaluation.valid(evaluated_items: evaluated)
       end
 
       private def valid_object?(rules, value)
@@ -757,15 +756,19 @@ module Schemurai
             evaluated.concat(result.evaluated_properties) if result.valid?
           end
         end
-
-        combined = prior_evaluation.evaluated_properties | evaluated
         if (unevaluated = rules.unevaluated)
-          (value.keys - combined).each do |name|
+          prior_properties = prior_evaluation.evaluated_properties
+          value.each_key do |name|
+            next if prior_properties.include?(name) || evaluated.include?(name)
+
             evaluate_at(unevaluated, value[name], name, "unevaluatedProperties")
             evaluated << name
           end
         end
-        Evaluation.valid(evaluated_properties: evaluated.uniq)
+        return Evaluation.valid if evaluated.empty?
+
+        evaluated.uniq!
+        Evaluation.valid(evaluated_properties: evaluated)
       end
 
       private def check_combiner(opcode, operand, value)
@@ -821,6 +824,12 @@ module Schemurai
       end
 
       private def evaluate_at(program, instance, instance_segment, schema_segment, child_segment = MISSING_SEGMENT)
+        return evaluate(program, instance) unless @instance_path
+
+        evaluate_at_with_path(program, instance, instance_segment, schema_segment, child_segment)
+      end
+
+      private def evaluate_at_with_path(program, instance, instance_segment, schema_segment, child_segment)
         @instance_path << instance_segment unless instance_segment.equal?(MISSING_SEGMENT)
         @schema_path << schema_segment
         @schema_path << child_segment unless child_segment.equal?(MISSING_SEGMENT)
@@ -832,6 +841,12 @@ module Schemurai
       end
 
       private def trial_at(program, instance, instance_segment, schema_segment, child_segment = MISSING_SEGMENT)
+        return trial(program, instance) unless @instance_path
+
+        trial_at_with_path(program, instance, instance_segment, schema_segment, child_segment)
+      end
+
+      private def trial_at_with_path(program, instance, instance_segment, schema_segment, child_segment)
         @instance_path << instance_segment unless instance_segment.equal?(MISSING_SEGMENT)
         @schema_path << schema_segment
         @schema_path << child_segment unless child_segment.equal?(MISSING_SEGMENT)

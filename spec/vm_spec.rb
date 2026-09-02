@@ -34,6 +34,20 @@ RSpec.describe "the VM backend" do
     expect(validator.validate(-1.5).errors.map(&:keyword)).to eq(%w[type minimum])
   end
 
+  it "restores detailed paths after annotation-only validity checks", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
+    schema = {
+      "$schema" => "https://json-schema.org/draft/2020-12/schema",
+      "properties" => {"known" => true},
+      "unevaluatedProperties" => false
+    }
+    validator = Schemurai.compile(schema, backend: :vm)
+    instance = {"known" => 1, "extra" => 2}
+
+    expect(validator.valid?(instance)).to be(false)
+    expect(validator.validate(instance).errors.map { |error| [error.instance_path, error.schema_path] })
+      .to eq([["/extra", "/unevaluatedProperties"]])
+  end
+
   it "snapshots nested mutable operands without freezing the source schema", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
     schema = {
       "$schema" => "https://json-schema.org/draft/2020-12/schema",
