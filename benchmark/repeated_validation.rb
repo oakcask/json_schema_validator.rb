@@ -6,7 +6,6 @@ root = File.expand_path("..", __dir__)
 $LOAD_PATH.unshift(ENV.fetch("JSON_SCHEMA_VALIDATOR_LIB", File.join(root, "lib")))
 
 require "schemurai"
-require "json_schemer"
 
 schema = {
   "$schema" => "https://json-schema.org/draft/2020-12/schema",
@@ -71,20 +70,10 @@ documents = documents_with_expected.map(&:first)
 expected = documents_with_expected.map(&:last)
 
 registry = Schemurai::SchemaRegistry.new
-validators = {
-  "schemurai" => registry.compile(schema),
-  "json_schemer" => JSONSchemer.schema(
-    schema,
-    meta_schema: JSONSchemer.draft202012,
-    regexp_resolver: "ecma"
-  )
-}
-
-validators.each do |name, validator|
-  actual = documents.map { |document| validator.valid?(document) }
-  wrong = actual.zip(expected).count { |result, expected_result| result != expected_result }
-  raise "#{name} produced #{wrong} wrong results" unless wrong.zero?
-end
+validator = registry.compile(schema)
+actual = documents.map { |document| validator.valid?(document) }
+wrong = actual.zip(expected).count { |result, expected_result| result != expected_result }
+raise "validator produced #{wrong} wrong results" unless wrong.zero?
 
 puts "Repeated validation with one compiled Draft 2020-12 schema"
 puts "#{document_count} documents (#{expected.count(true)} valid, #{expected.count(false)} invalid)"
@@ -95,14 +84,10 @@ warmup = Float(ENV.fetch("BENCHMARK_WARMUP", "2"))
 Benchmark.ips do |benchmark|
   benchmark.config(time: time, warmup: warmup)
 
-  validators.each do |name, validator|
-    index = 0
-    benchmark.report(name) do
-      validator.valid?(documents[index])
-      index += 1
-      index = 0 if index == document_count
-    end
+  index = 0
+  benchmark.report("lib validate") do
+    validator.valid?(documents[index])
+    index += 1
+    index = 0 if index == document_count
   end
-
-  benchmark.compare!
 end

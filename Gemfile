@@ -28,7 +28,5 @@ end
 
 group :benchmark do
   gem "benchmark-ips", require: false
-  gem "json-schema", path: "references/json-schema", require: false
-  gem "json_schemer", path: "references/json_schemer", require: false
   gem "ruby-prof", require: false
 end
