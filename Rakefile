@@ -1,6 +1,17 @@
 # frozen_string_literal: true
 
 require "rdoc/task"
+require "rake/clean"
+
+CLEAN.include("ext/schemurai_native/*.o", "ext/schemurai_native/*.so", "ext/schemurai_native/Makefile")
+
+desc "Build the native VM backend"
+task :compile do
+  Dir.chdir("ext/schemurai_native") do
+    ruby "extconf.rb" unless File.exist?("Makefile")
+    sh "make"
+  end
+end
 
 RDoc::Task.new do |rdoc|
   rdoc.main = "README.md"

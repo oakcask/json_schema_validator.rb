@@ -9,6 +9,7 @@ on:
       - .ruby-version
       - schemurai.gemspec
       - lib/**/*
+      - ext/**/*
       - sig/**/*
       - README.md
       - test/package_smoke_test.rb
@@ -18,6 +19,7 @@ on:
       - .ruby-version
       - schemurai.gemspec
       - lib/**/*
+      - ext/**/*
       - sig/**/*
       - README.md
       - test/package_smoke_test.rb

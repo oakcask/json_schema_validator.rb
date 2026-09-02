@@ -11,6 +11,7 @@ on:
       - Gemfile.lock
       - schemurai.gemspec
       - lib/**/*
+      - ext/**/*
       - oracle/**/*
       - test/evaluator_backend_test.rb
   pull_request:
@@ -40,6 +41,8 @@ jobs:
           ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true
           cache-version: vm-${{ matrix.os }}-${{ matrix.ruby-version }}-${{ hashFiles('Gemfile.lock') }}
+      - name: Build native VM evaluator
+        run: bundle exec rake compile
       - name: Compare VM evaluator with the Ruby oracle
         run: bundle exec rspec -Ilib test/evaluator_backend_test.rb
         env:

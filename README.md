@@ -217,9 +217,11 @@ validator is retained.
 
 `Schemurai.backend`, `SchemaRegistry#backend`, and `Validator#backend` expose
 the actual backend. Pass `backend: :ruby` to force the Ruby oracle or
-`backend: :vm` to ahead-of-time compile schemas for the validator virtual machine.
-Schema graph construction remains shared Ruby infrastructure. Environment-based selection
-is documented in [`docs/backend-selection.md`](docs/backend-selection.md).
+`backend: :vm` to ahead-of-time compile schemas into the native validator virtual
+machine. Its compiler, immutable programs, rule structures, and evaluator are
+implemented in C; schema graph construction and public result objects remain
+shared Ruby infrastructure. Environment-based selection is documented in
+[`docs/backend-selection.md`](docs/backend-selection.md).
 
 ## JSON Schema conformance
 

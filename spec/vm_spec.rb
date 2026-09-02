@@ -3,19 +3,19 @@
 require_relative "spec_helper"
 
 RSpec.describe "the VM backend" do
-  it "compiles schema nodes into frozen instruction streams", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
+  it "compiles schema nodes into native instruction streams", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
     validator = Schemurai.compile(
       {"type" => "object", "properties" => {"name" => {"type" => "string"}}},
       backend: :vm
     )
     evaluator = validator.instance_variable_get(:@evaluator)
     program = evaluator.instance_variable_get(:@root)
-    object_rules = program.code.fetch(2)
-
-    expect(program.code.fetch(1)).to eq(:typed_object)
-    expect(program.code).to be_frozen
-    expect(program.code).to all(be_frozen)
-    expect(object_rules.properties.fetch("name").code.values_at(1, 2)).to eq([:type_string, nil])
+    expect(program).to be_frozen
+    expect(program.instruction_count).to eq(1)
+    vm = Schemurai.const_get(:VM)
+    expect(vm::Compiler.instance_method(:compile).source_location).to be_nil
+    expect(vm::Evaluator.instance_method(:valid?).source_location).to be_nil
+    expect(vm::Evaluator.instance_method(:validate).source_location).to be_nil
   end
 
   it "executes the compiled program after the source schema changes", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
