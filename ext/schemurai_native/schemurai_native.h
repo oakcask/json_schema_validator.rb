@@ -131,7 +131,6 @@ typedef struct {
   long error_count;
 } evaluator_t;
 
-
 typedef struct {
   bool valid;
   VALUE properties, items;
@@ -297,7 +296,6 @@ enum static_string_index {
 
 extern VALUE static_strings[STATIC_STRING_COUNT];
 #define STATIC_STRING(name) static_strings[STATIC_STRING_##name]
-
 
 extern const rb_data_type_t program_type;
 extern const rb_data_type_t rule_type;

@@ -48,11 +48,11 @@ static size_t program_size(const void *ptr) {
   return sizeof(*p) + p->capacity * sizeof(instruction_t);
 }
 const rb_data_type_t program_type = {"Schemurai::VM::Program",
-                                            {program_mark, program_free, program_size, program_compact},
-                                            0,
-                                            0,
-                                            RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED |
-                                                RUBY_TYPED_FROZEN_SHAREABLE};
+                                     {program_mark, program_free, program_size, program_compact},
+                                     0,
+                                     0,
+                                     RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED |
+                                         RUBY_TYPED_FROZEN_SHAREABLE};
 
 #define MARK_RULE_VALUE(field) rb_gc_mark_movable(r->as.field)
 #define COMPACT_RULE_VALUE(field) r->as.field = rb_gc_location(r->as.field)
@@ -134,11 +134,10 @@ static size_t rule_size(const void *ptr) {
   return sizeof(rule_t);
 }
 const rb_data_type_t rule_type = {"Schemurai::VM::Rule",
-                                         {rule_mark, RUBY_TYPED_DEFAULT_FREE, rule_size, rule_compact},
-                                         0,
-                                         0,
-                                         RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED |
-                                             RUBY_TYPED_FROZEN_SHAREABLE};
+                                  {rule_mark, RUBY_TYPED_DEFAULT_FREE, rule_size, rule_compact},
+                                  0,
+                                  0,
+                                  RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FROZEN_SHAREABLE};
 
 static void compiler_mark(void *ptr) {
   compiler_t *c = ptr;
@@ -154,11 +153,11 @@ static size_t compiler_size(const void *ptr) {
   return sizeof(compiler_t);
 }
 const rb_data_type_t compiler_type = {"Schemurai::VM::Compiler",
-                                             {compiler_mark, RUBY_TYPED_DEFAULT_FREE, compiler_size, compiler_compact},
-                                             0,
-                                             0,
-                                             RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED |
-                                                 RUBY_TYPED_FROZEN_SHAREABLE};
+                                      {compiler_mark, RUBY_TYPED_DEFAULT_FREE, compiler_size, compiler_compact},
+                                      0,
+                                      0,
+                                      RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED |
+                                          RUBY_TYPED_FROZEN_SHAREABLE};
 
 static void evaluator_mark(void *ptr) {
   evaluator_t *e = ptr;
@@ -204,10 +203,10 @@ static size_t evaluator_size(const void *ptr) {
          e->scope_cache_capacity * sizeof(scope_cache_entry_t);
 }
 const rb_data_type_t evaluator_type = {"Schemurai::VM::Evaluator",
-                                              {evaluator_mark, evaluator_free, evaluator_size, evaluator_compact},
-                                              0,
-                                              0,
-                                              RUBY_TYPED_FREE_IMMEDIATELY};
+                                       {evaluator_mark, evaluator_free, evaluator_size, evaluator_compact},
+                                       0,
+                                       0,
+                                       RUBY_TYPED_FREE_IMMEDIATELY};
 
 VALUE program_alloc(VALUE klass) {
   program_t *p;
