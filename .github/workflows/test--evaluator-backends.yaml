@@ -13,6 +13,7 @@ on:
       - lib/**/*
       - ext/**/*
       - oracle/**/*
+      - spec/vm_spec.rb
       - test/evaluator_backend_test.rb
   pull_request:
     paths: *backend_paths
@@ -45,5 +46,56 @@ jobs:
         run: bundle exec rake compile
       - name: Compare VM evaluator with the Ruby oracle
         run: bundle exec rspec -Ilib test/evaluator_backend_test.rb
+        env:
+          SCHEMURAI_DIFFERENTIAL_BACKEND: vm
+
+  address-sanitizer:
+    runs-on: ubuntu-24.04
+    env:
+      ASAN_OPTIONS: detect_leaks=0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: asan-release
+          bundler-cache: true
+          cache-version: vm-address-sanitizer-${{ hashFiles('Gemfile.lock') }}
+      - name: Configure native VM evaluator
+        run: ruby extconf.rb
+        working-directory: ext/schemurai_native
+      - name: Compile native VM evaluator
+        run: make
+        working-directory: ext/schemurai_native
+      - name: Exercise native VM under AddressSanitizer
+        run: bundle exec rspec -Ilib spec/vm_spec.rb test/evaluator_backend_test.rb
+        env:
+          SCHEMURAI_DIFFERENTIAL_BACKEND: vm
+
+  undefined-behavior-sanitizer:
+    runs-on: ubuntu-latest
+    env:
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+          cache-version: vm-undefined-sanitizer-${{ hashFiles('Gemfile.lock') }}
+      - name: Configure native VM evaluator
+        run: ruby extconf.rb
+        working-directory: ext/schemurai_native
+        env:
+          CFLAGS: -fsanitize=undefined -fno-omit-frame-pointer -O1
+          DLDFLAGS: -fsanitize=undefined
+      - name: Compile native VM evaluator
+        run: make
+        working-directory: ext/schemurai_native
+      - name: Exercise native VM under UndefinedBehaviorSanitizer
+        run: bundle exec rspec -Ilib spec/vm_spec.rb test/evaluator_backend_test.rb
         env:
           SCHEMURAI_DIFFERENTIAL_BACKEND: vm
