@@ -2,7 +2,7 @@ source "https://rubygems.org"
 git_source(:github) { |repo_name| "https://github.com/#{repo_name}" }
 ruby ">= 3.4"
 gemspec
-gem "rake", require: false
+gem "rake", require: false, groups: %i[default documentation]
 
 group :test do
   gem "rspec", require: false
