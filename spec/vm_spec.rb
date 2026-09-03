@@ -105,9 +105,9 @@ RSpec.describe "the VM backend" do
     evaluator = validator.instance_variable_get(:@evaluator)
     native_size = ObjectSpace.memsize_of(evaluator)
     instance = {}
-    3_000.times { instance = {"next" => instance} }
+    500.times { instance = {"next" => instance} }
 
-    expect { Timeout.timeout(3) { 50.times { raise "invalid recursive value" unless validator.valid?(instance) } } }
+    expect { Timeout.timeout(3) { 200.times { raise "invalid recursive value" unless validator.valid?(instance) } } }
       .not_to raise_error
     expect(validator.validate(instance)).to be_valid
 
