@@ -34,6 +34,15 @@ RSpec.describe "the VM backend" do
     expect(validator.validate(-1.5).errors.map(&:keyword)).to eq(%w[type minimum])
   end
 
+  it "falls back for unsupported nested instance values reached by a program", :aggregate_failures do
+    value = +"x"
+    value.define_singleton_method(:length) { 2 }
+    validator = Schemurai.compile({"properties" => {"value" => {"minLength" => 2}}}, backend: :vm)
+
+    expect(validator.valid?({"value" => value})).to be(true)
+    expect(validator.validate({"value" => value})).to be_valid
+  end
+
   it "restores detailed paths after annotation-only validity checks", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
     schema = {
       "$schema" => "https://json-schema.org/draft/2020-12/schema",
