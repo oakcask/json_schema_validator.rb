@@ -66,17 +66,17 @@ jobs:
           ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true
           cache-version: vm-address-sanitizer-${{ matrix.ruby-version }}-${{ hashFiles('Gemfile.lock') }}
-      - name: Configure native VM evaluator
-        run: ruby extconf.rb
-        working-directory: ext/schemurai_native
+      - name: Build gem
+        run: gem build schemurai.gemspec --output schemurai.gem
+      - name: Install gem with AddressSanitizer
+        run: gem install --local schemurai.gem --no-document
         env:
           CFLAGS: -fsanitize=address -fno-omit-frame-pointer -O1
           DLDFLAGS: -fsanitize=address
-      - name: Compile native VM evaluator
-        run: make
-        working-directory: ext/schemurai_native
-      - name: Exercise native VM under AddressSanitizer
-        run: env LD_PRELOAD="$(gcc -print-file-name=libasan.so)" bundle exec rspec -Ilib spec/vm_spec.rb test/evaluator_backend_test.rb
+      - name: Exercise packaged native VM under AddressSanitizer
+        run: |
+          native_extension_dir="$(ruby -e 'puts Gem::Specification.find_by_name("schemurai").extension_dir')"
+          env RUBYLIB="$native_extension_dir" LD_PRELOAD="$(gcc -print-file-name=libasan.so)" bundle exec rspec -Ilib spec/vm_spec.rb test/evaluator_backend_test.rb
         env:
           SCHEMURAI_DIFFERENTIAL_BACKEND: vm
 
@@ -97,16 +97,16 @@ jobs:
           ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true
           cache-version: vm-undefined-sanitizer-${{ matrix.ruby-version }}-${{ hashFiles('Gemfile.lock') }}
-      - name: Configure native VM evaluator
-        run: ruby extconf.rb
-        working-directory: ext/schemurai_native
+      - name: Build gem
+        run: gem build schemurai.gemspec --output schemurai.gem
+      - name: Install gem with UndefinedBehaviorSanitizer
+        run: gem install --local schemurai.gem --no-document
         env:
           CFLAGS: -fsanitize=undefined -fno-omit-frame-pointer -O1
           DLDFLAGS: -fsanitize=undefined
-      - name: Compile native VM evaluator
-        run: make
-        working-directory: ext/schemurai_native
-      - name: Exercise native VM under UndefinedBehaviorSanitizer
-        run: bundle exec rspec -Ilib spec/vm_spec.rb test/evaluator_backend_test.rb
+      - name: Exercise packaged native VM under UndefinedBehaviorSanitizer
+        run: |
+          native_extension_dir="$(ruby -e 'puts Gem::Specification.find_by_name("schemurai").extension_dir')"
+          env RUBYLIB="$native_extension_dir" bundle exec rspec -Ilib spec/vm_spec.rb test/evaluator_backend_test.rb
         env:
           SCHEMURAI_DIFFERENTIAL_BACKEND: vm
