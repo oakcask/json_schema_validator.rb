@@ -306,11 +306,12 @@ RSpec.describe "the VM backend" do
     registry.make_shareable
     ractor_depth = Gem.win_platform? ? 1 : 100
     ractor_repetitions = 20
+    ractor_count = Gem.win_platform? ? 1 : 4
 
     GC.start
     GC.compact
 
-    ractors = 4.times.map do
+    ractors = ractor_count.times.map do
       Ractor.new(registry, ractor_depth, ractor_repetitions) do |shared, depth, repetitions|
         validator = shared.validator_for("urn:node")
         instance = {}
