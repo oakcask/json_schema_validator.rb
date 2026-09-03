@@ -111,20 +111,16 @@ typedef struct {
   VALUE graph;
   VALUE programs;
 } compiler_t;
-typedef struct {
-  VALUE source, instance;
-} active_entry_t;
 #define CACHED_SCOPE_LIMIT 8
+#define CACHED_SCOPE_ENTRY_LIMIT 64
 typedef struct {
   VALUE rule, target, resources[CACHED_SCOPE_LIMIT];
   uint8_t length;
 } scope_cache_entry_t;
 typedef struct {
   VALUE graph, compiler, root;
-  VALUE regexps, resolved, dynamic_scope;
+  VALUE regexps, resolved, dynamic_scope, active;
   VALUE instance_path, schema_path, errors;
-  active_entry_t *active;
-  size_t active_length, active_capacity;
   scope_cache_entry_t *scope_cache;
   size_t scope_cache_length, scope_cache_capacity;
   bool content, format, unsupported_instance;

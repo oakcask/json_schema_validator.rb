@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "spec_helper"
+require "objspace"
 require "timeout"
 
 RSpec.describe "the VM backend" do
@@ -94,6 +95,35 @@ RSpec.describe "the VM backend" do
     end.not_to raise_error
   end
 
+  it "tracks recursive references in linear time without retained native buffers", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
+    schema = {
+      "$id" => "urn:recursive-node",
+      "type" => "object",
+      "properties" => {"next" => {"$ref" => "urn:recursive-node"}}
+    }
+    validator = Schemurai.compile(schema, backend: :vm)
+    evaluator = validator.instance_variable_get(:@evaluator)
+    native_size = ObjectSpace.memsize_of(evaluator)
+    instance = {}
+    3_000.times { instance = {"next" => instance} }
+
+    expect { Timeout.timeout(3) { 50.times { raise "invalid recursive value" unless validator.valid?(instance) } } }
+      .not_to raise_error
+    expect(validator.validate(instance)).to be_valid
+
+    GC.start
+    GC.compact
+
+    expect(ObjectSpace.memsize_of(evaluator)).to eq(native_size)
+    retained_hash_sizes = ObjectSpace.reachable_objects_from(evaluator)
+      .select { |object| object.instance_of?(Hash) && !object.empty? }
+      .map(&:size)
+    expect(retained_hash_sizes).to eq([1])
+    retained_arrays = ObjectSpace.reachable_objects_from(evaluator).select { |object| object.instance_of?(Array) }
+    expect(retained_arrays.length).to eq(1)
+    expect(validator.valid?(instance)).to be(true)
+  end
+
   it "keeps every native rule layout valid across GC compaction" do # rubocop:disable RSpec/ExampleLength
     schema = {
       "$schema" => "https://json-schema.org/draft/2020-12/schema",
@@ -109,8 +139,7 @@ RSpec.describe "the VM backend" do
     }
     validator = Schemurai.compile(schema, backend: :vm)
 
-    GC.start
-    GC.compact
+    GC.verify_compaction_references(double_heap: true, toward: :empty)
 
     expect(validator.valid?({"enabled" => true, "number" => 1.25, "text" => "x", "items" => [1]})).to be(true)
   end
@@ -277,9 +306,11 @@ RSpec.describe "the VM backend" do
     ractors = 4.times.map do
       Ractor.new(registry) do |shared|
         validator = shared.validator_for("urn:node")
+        instance = {}
+        100.times { instance = {"child" => instance} }
         GC.start
         GC.compact
-        100.times.all? { validator.valid?({"child" => {}}) }
+        20.times.all? { validator.valid?(instance) }
       end
     end
 

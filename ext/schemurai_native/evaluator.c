@@ -227,18 +227,21 @@ static int boolean_program(VALUE program) {
   return p->length == 1 && p->instructions[0].opcode == OP_BOOLEAN ? (RTEST(p->instructions[0].operand) ? 1 : 0) : -1;
 }
 bool active_enter(evaluator_t *e, VALUE source, VALUE instance) {
-  for (size_t i = 0; i < e->active_length; i++)
-    if (e->active[i].source == source && e->active[i].instance == instance)
-      return false;
-  if (e->active_length == e->active_capacity) {
-    e->active_capacity = e->active_capacity ? e->active_capacity * 2 : 8;
-    REALLOC_N(e->active, active_entry_t, e->active_capacity);
+  VALUE instances = rb_hash_lookup2(e->active, source, Qundef);
+  if (instances == Qundef) {
+    instances = rb_hash_new();
+    rb_funcall(instances, id_compare_by_identity, 0);
+    rb_hash_aset(e->active, source, instances);
   }
-  e->active[e->active_length++] = (active_entry_t){source, instance};
+  if (rb_hash_lookup2(instances, instance, Qundef) != Qundef)
+    return false;
+  rb_hash_aset(instances, instance, Qtrue);
   return true;
 }
 void active_leave(evaluator_t *e, VALUE source, VALUE instance) {
-  e->active_length--;
+  VALUE instances = rb_hash_lookup2(e->active, source, Qundef);
+  if (instances != Qundef)
+    rb_hash_delete(instances, instance);
 }
 static VALUE reference_target(evaluator_t *e, VALUE source, VALUE rule_obj) {
   VALUE target = rb_hash_lookup2(e->resolved, rule_obj, Qundef);
@@ -313,7 +316,7 @@ static VALUE cached_scope_target(evaluator_t *e, VALUE rule) {
 }
 static void cache_scope_target(evaluator_t *e, VALUE rule, VALUE target) {
   long length = RARRAY_LEN(e->dynamic_scope);
-  if (length > CACHED_SCOPE_LIMIT)
+  if (length > CACHED_SCOPE_LIMIT || e->scope_cache_length >= CACHED_SCOPE_ENTRY_LIMIT)
     return;
   if (e->scope_cache_length == e->scope_cache_capacity) {
     e->scope_cache_capacity = e->scope_cache_capacity ? e->scope_cache_capacity * 2 : 4;
@@ -864,6 +867,8 @@ VALUE compiler_evaluator(int argc, VALUE *argv, VALUE self) {
   RB_OBJ_WRITE(evaluator, &e->resolved, rb_hash_new());
   rb_funcall(e->resolved, id_compare_by_identity, 0);
   RB_OBJ_WRITE(evaluator, &e->dynamic_scope, rb_ary_new());
+  RB_OBJ_WRITE(evaluator, &e->active, rb_hash_new());
+  rb_funcall(e->active, id_compare_by_identity, 0);
   e->content = RTEST(rb_hash_aref(options, sym_content));
   e->format = RTEST(rb_hash_aref(options, sym_format));
   e->unsupported_instance = false;
@@ -886,9 +891,10 @@ VALUE evaluator_valid(VALUE self, VALUE instance) {
   TypedData_Get_Struct(self, evaluator_t, &evaluator_type, e);
   if (PROGRAM_PTR(e->root)->flags & FLAG_DYNAMIC_SCOPE)
     rb_ary_clear(e->dynamic_scope);
-  e->active_length = 0;
+  rb_hash_clear(e->active);
   e->unsupported_instance = false;
   bool valid = evaluate_program(e, e->root, instance).valid;
+  rb_hash_clear(e->active);
   if (e->unsupported_instance)
     return rb_funcall(ruby_evaluator(e), id_valid_p, 1, instance);
   return valid ? Qtrue : Qfalse;

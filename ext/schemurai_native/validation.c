@@ -521,15 +521,20 @@ VALUE evaluator_validate(VALUE self, VALUE instance) {
   RB_OBJ_WRITE(self, &e->schema_path, rb_ary_new());
   if (PROGRAM_PTR(e->root)->flags & FLAG_DYNAMIC_SCOPE)
     rb_ary_clear(e->dynamic_scope);
-  e->active_length = 0;
+  rb_hash_clear(e->active);
   e->error_count = 0;
   e->unsupported_instance = false;
   evaluate_detail(e, e->root, instance);
+  rb_hash_clear(e->active);
   if (e->unsupported_instance) {
     RB_OBJ_WRITE(self, &e->errors, Qnil);
+    RB_OBJ_WRITE(self, &e->instance_path, Qnil);
+    RB_OBJ_WRITE(self, &e->schema_path, Qnil);
     return rb_funcall(ruby_evaluator(e), id_validate, 1, instance);
   }
   VALUE result = rb_class_new_instance(1, &e->errors, cResult);
   RB_OBJ_WRITE(self, &e->errors, Qnil);
+  RB_OBJ_WRITE(self, &e->instance_path, Qnil);
+  RB_OBJ_WRITE(self, &e->schema_path, Qnil);
   return result;
 }

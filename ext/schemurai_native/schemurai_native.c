@@ -167,13 +167,10 @@ static void evaluator_mark(void *ptr) {
   rb_gc_mark_movable(e->regexps);
   rb_gc_mark_movable(e->resolved);
   rb_gc_mark_movable(e->dynamic_scope);
+  rb_gc_mark_movable(e->active);
   rb_gc_mark_movable(e->instance_path);
   rb_gc_mark_movable(e->schema_path);
   rb_gc_mark_movable(e->errors);
-  for (size_t i = 0; i < e->active_length; i++) {
-    rb_gc_mark_movable(e->active[i].source);
-    rb_gc_mark_movable(e->active[i].instance);
-  }
   for (size_t i = 0; i < e->scope_cache_length; i++) {
     rb_gc_mark_movable(e->scope_cache[i].rule);
     rb_gc_mark_movable(e->scope_cache[i].target);
@@ -189,13 +186,10 @@ static void evaluator_compact(void *ptr) {
   e->regexps = rb_gc_location(e->regexps);
   e->resolved = rb_gc_location(e->resolved);
   e->dynamic_scope = rb_gc_location(e->dynamic_scope);
+  e->active = rb_gc_location(e->active);
   e->instance_path = rb_gc_location(e->instance_path);
   e->schema_path = rb_gc_location(e->schema_path);
   e->errors = rb_gc_location(e->errors);
-  for (size_t i = 0; i < e->active_length; i++) {
-    e->active[i].source = rb_gc_location(e->active[i].source);
-    e->active[i].instance = rb_gc_location(e->active[i].instance);
-  }
   for (size_t i = 0; i < e->scope_cache_length; i++) {
     e->scope_cache[i].rule = rb_gc_location(e->scope_cache[i].rule);
     e->scope_cache[i].target = rb_gc_location(e->scope_cache[i].target);
@@ -205,14 +199,12 @@ static void evaluator_compact(void *ptr) {
 }
 static void evaluator_free(void *ptr) {
   evaluator_t *e = ptr;
-  xfree(e->active);
   xfree(e->scope_cache);
   xfree(e);
 }
 static size_t evaluator_size(const void *ptr) {
   const evaluator_t *e = ptr;
-  return sizeof(*e) + e->active_capacity * sizeof(active_entry_t) +
-         e->scope_cache_capacity * sizeof(scope_cache_entry_t);
+  return sizeof(*e) + e->scope_cache_capacity * sizeof(scope_cache_entry_t);
 }
 const rb_data_type_t evaluator_type = {"Schemurai::VM::Evaluator",
                                        {evaluator_mark, evaluator_free, evaluator_size, evaluator_compact},
