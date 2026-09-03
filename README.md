@@ -2,6 +2,7 @@
 
 [![Gem Version](https://badge.fury.io/rb/schemurai.svg?icon=si%3Arubygems)](https://badge.fury.io/rb/schemurai)
 [![test / rspec](https://github.com/oakcask/schemurai/actions/workflows/test--rspec.yaml/badge.svg)](https://github.com/oakcask/schemurai/actions/workflows/test--rspec.yaml)
+[![lint / c](https://github.com/oakcask/schemurai/actions/workflows/lint--c.yaml/badge.svg)](https://github.com/oakcask/schemurai/actions/workflows/lint--c.yaml)
 [![lint / rubocop](https://github.com/oakcask/schemurai/actions/workflows/lint--rubocop.yaml/badge.svg)](https://github.com/oakcask/schemurai/actions/workflows/lint--rubocop.yaml)
 [![lint / rbs](https://github.com/oakcask/schemurai/actions/workflows/lint--rbs.yaml/badge.svg)](https://github.com/oakcask/schemurai/actions/workflows/lint--rbs.yaml)
 
@@ -295,6 +296,14 @@ Run the linter with:
 
 ```sh
 bundle exec rubocop
+```
+
+The native extension uses LLVM 18 for formatting and linting:
+
+```sh
+bundle exec rake c:format
+bundle exec rake c:format:check
+bundle exec rake c:lint
 ```
 
 ## AI Disclosure
