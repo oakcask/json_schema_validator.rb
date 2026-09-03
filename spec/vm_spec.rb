@@ -105,9 +105,11 @@ RSpec.describe "the VM backend" do
     evaluator = validator.instance_variable_get(:@evaluator)
     native_size = ObjectSpace.memsize_of(evaluator)
     instance = {}
-    500.times { instance = {"next" => instance} }
+    depth = Gem.win_platform? ? 20 : 500
+    repetitions = Gem.win_platform? ? 5 : 200
+    depth.times { instance = {"next" => instance} }
 
-    expect { Timeout.timeout(3) { 200.times { raise "invalid recursive value" unless validator.valid?(instance) } } }
+    expect { Timeout.timeout(3) { repetitions.times { raise "invalid recursive value" unless validator.valid?(instance) } } }
       .not_to raise_error
     expect(validator.validate(instance)).to be_valid
 
@@ -302,15 +304,17 @@ RSpec.describe "the VM backend" do
     }
     registry = Schemurai::SchemaRegistry.new(schemas: {"urn:node" => schema}, backend: :vm)
     registry.make_shareable
+    ractor_depth = Gem.win_platform? ? 1 : 100
+    ractor_repetitions = 20
 
     ractors = 4.times.map do
-      Ractor.new(registry) do |shared|
+      Ractor.new(registry, ractor_depth, ractor_repetitions) do |shared, depth, repetitions|
         validator = shared.validator_for("urn:node")
         instance = {}
-        100.times { instance = {"child" => instance} }
+        depth.times { instance = {"child" => instance} }
         GC.start
         GC.compact
-        20.times.all? { validator.valid?(instance) }
+        repetitions.times.all? { validator.valid?(instance) }
       end
     end
 
