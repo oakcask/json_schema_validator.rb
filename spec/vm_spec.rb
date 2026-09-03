@@ -58,6 +58,42 @@ RSpec.describe "the VM backend" do
     expect(validator.valid?([{"value" => 1}, {"value" => 1.0}])).to be(false)
   end
 
+  it "checks unique structured items in linear time", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
+    validator = Schemurai.compile({"uniqueItems" => true}, backend: :vm)
+    values = Array.new(30_000) { |index| [{"value" => index.to_f}] }
+
+    expect { Timeout.timeout(3) { validator.valid?(values) } }.not_to raise_error
+    expect(validator.valid?([[{"value" => 1}], [{"value" => 1.0}]])).to be(false)
+  end
+
+  it "tracks large evaluated location sets in linear time" do # rubocop:disable RSpec/ExampleLength
+    object_validator = Schemurai.compile(
+      {
+        "$schema" => "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties" => true,
+        "unevaluatedProperties" => false
+      },
+      backend: :vm
+    )
+    array_validator = Schemurai.compile(
+      {
+        "$schema" => "https://json-schema.org/draft/2020-12/schema",
+        "items" => true,
+        "unevaluatedItems" => false
+      },
+      backend: :vm
+    )
+    object = Array.new(30_000) { |index| ["key-#{index}", index] }.to_h
+    array = Array.new(30_000, true)
+
+    expect do
+      Timeout.timeout(3) do
+        raise "object annotation regression" unless object_validator.valid?(object)
+        raise "array annotation regression" unless array_validator.valid?(array)
+      end
+    end.not_to raise_error
+  end
+
   it "keeps every native rule layout valid across GC compaction" do # rubocop:disable RSpec/ExampleLength
     schema = {
       "$schema" => "https://json-schema.org/draft/2020-12/schema",
@@ -77,6 +113,38 @@ RSpec.describe "the VM backend" do
     GC.compact
 
     expect(validator.valid?({"enabled" => true, "number" => 1.25, "text" => "x", "items" => [1]})).to be(true)
+  end
+
+  it "retains young rule operands while compiling under minor GC stress" do # rubocop:disable RSpec/ExampleLength
+    schema = {
+      "$schema" => "https://json-schema.org/draft/2020-12/schema",
+      "type" => "object",
+      "allOf" => [{"required" => ["items"]}],
+      "if" => {"properties" => {"enabled" => {"const" => true}}},
+      "then" => {"dependentRequired" => {"enabled" => ["items"]}},
+      "properties" => {
+        "items" => {
+          "type" => "array",
+          "prefixItems" => [{"type" => "integer"}],
+          "items" => {"type" => "string"},
+          "contains" => true
+        },
+        "text" => {"type" => "string", "pattern" => "^x"}
+      },
+      "patternProperties" => {"^number" => {"type" => "number"}},
+      "dependentSchemas" => {"items" => {"required" => ["text"]}},
+      "unevaluatedProperties" => false
+    }
+    previous_stress = GC.stress
+
+    begin
+      GC.stress = 1
+      validator = Schemurai.compile(schema, backend: :vm)
+    ensure
+      GC.stress = previous_stress
+    end
+
+    expect(validator.valid?({"items" => [1, "tail"], "text" => "x"})).to be(true)
   end
 
   it "falls back for unsupported nested instance values reached by a program", :aggregate_failures do
@@ -209,6 +277,8 @@ RSpec.describe "the VM backend" do
     ractors = 4.times.map do
       Ractor.new(registry) do |shared|
         validator = shared.validator_for("urn:node")
+        GC.start
+        GC.compact
         100.times.all? { validator.valid?({"child" => {}}) }
       end
     end

@@ -1,30 +1,36 @@
 #include "schemurai_native.h"
 
 /* Evaluator core: validity and annotations stay in a small native value type.
- * Ruby arrays are allocated lazily only when an applicator records locations. */
+ * Ruby hashes are allocated lazily when an applicator records multiple locations. */
 
 void add_unique(VALUE *list, VALUE value) {
   if (NIL_P(*list)) {
     *list = value;
     return;
   }
-  if (RB_TYPE_P(*list, T_ARRAY)) {
-    if (!RTEST(rb_ary_includes(*list, value)))
-      rb_ary_push(*list, value);
+  if (RB_TYPE_P(*list, T_HASH)) {
+    rb_hash_aset(*list, value, Qtrue);
     return;
   }
-  if (!RTEST(rb_equal(*list, value)))
-    *list = rb_ary_new_from_args(2, *list, value);
+  if (!RTEST(rb_equal(*list, value))) {
+    VALUE set = rb_hash_new();
+    rb_hash_aset(set, *list, Qtrue);
+    rb_hash_aset(set, value, Qtrue);
+    *list = set;
+  }
+}
+static int merge_location(VALUE value, VALUE ignored, VALUE target) {
+  add_unique((VALUE *)target, value);
+  return ST_CONTINUE;
 }
 void merge_locations(VALUE *target, VALUE source) {
   if (NIL_P(source))
     return;
-  if (!RB_TYPE_P(source, T_ARRAY)) {
+  if (!RB_TYPE_P(source, T_HASH)) {
     add_unique(target, source);
     return;
   }
-  for (long i = 0; i < RARRAY_LEN(source); i++)
-    add_unique(target, rb_ary_entry(source, i));
+  rb_hash_foreach(source, merge_location, (VALUE)target);
 }
 void merge_evaluation(evaluation_t *target, evaluation_t source) {
   if (!source.valid) {
@@ -112,40 +118,52 @@ bool json_equal(evaluator_t *e, VALUE left, VALUE right) {
   return RTEST(rb_equal(left, right));
 }
 
-static VALUE unique_scalar_key(VALUE value) {
+static VALUE unique_item_key(evaluator_t *e, VALUE value) {
   if (CLASS_OF(value) == rb_cFloat && integer_p(value))
     return rb_funcall(value, id_to_i, 0);
   if (NIL_P(value) || value == Qtrue || value == Qfalse || RB_INTEGER_TYPE_P(value) || CLASS_OF(value) == rb_cFloat ||
       CLASS_OF(value) == rb_cString)
     return value;
+  if (CLASS_OF(value) == rb_cArray) {
+    long length = RARRAY_LEN(value);
+    VALUE key = rb_ary_new_capa(length);
+    for (long i = 0; i < length; i++) {
+      VALUE item = unique_item_key(e, rb_ary_entry(value, i));
+      if (item == Qundef)
+        return Qundef;
+      rb_ary_push(key, item);
+    }
+    return key;
+  }
+  if (CLASS_OF(value) == rb_cHash) {
+    VALUE keys = rb_funcall(value, id_keys, 0), key = rb_hash_new();
+    for (long i = 0; i < RARRAY_LEN(keys); i++) {
+      VALUE name = rb_ary_entry(keys, i);
+      if (CLASS_OF(name) != rb_cString) {
+        e->unsupported_instance = true;
+        return Qundef;
+      }
+      VALUE item = unique_item_key(e, rb_hash_aref(value, name));
+      if (item == Qundef)
+        return Qundef;
+      rb_hash_aset(key, name, item);
+    }
+    return key;
+  }
+  e->unsupported_instance = true;
   return Qundef;
 }
 
 bool unique_items(evaluator_t *e, VALUE value) {
-  VALUE scalars = Qnil, structures = Qnil;
+  VALUE seen = rb_hash_new();
   for (long i = 0; i < RARRAY_LEN(value); i++) {
     VALUE item = rb_ary_entry(value, i);
-    if (!supported_value(item)) {
-      e->unsupported_instance = true;
+    VALUE key = unique_item_key(e, item);
+    if (key == Qundef)
       return false;
-    }
-    VALUE key = unique_scalar_key(item);
-    if (key != Qundef) {
-      if (NIL_P(scalars))
-        scalars = rb_hash_new();
-      if (rb_hash_lookup2(scalars, key, Qundef) != Qundef)
-        return false;
-      rb_hash_aset(scalars, key, Qtrue);
-      continue;
-    }
-    if (NIL_P(structures)) {
-      structures = rb_ary_new();
-    } else {
-      for (long j = 0; j < RARRAY_LEN(structures); j++)
-        if (json_equal(e, rb_ary_entry(structures, j), item))
-          return false;
-    }
-    rb_ary_push(structures, item);
+    if (rb_hash_lookup2(seen, key, Qundef) != Qundef)
+      return false;
+    rb_hash_aset(seen, key, Qtrue);
   }
   return true;
 }

@@ -39,11 +39,9 @@ static VALUE compile_reference(VALUE reference) {
   VALUE rule = rule_new(RULE_REFERENCE);
   rule_t *r;
   TypedData_Get_Struct(rule, rule_t, &rule_type, r);
-  r->as.reference.value = snapshot(reference);
+  RB_OBJ_WRITE(rule, &r->as.reference.value, snapshot(reference));
   const char *ptr = StringValueCStr(reference), *hash = strchr(ptr, '#');
-  r->as.reference.fragment = hash ? rb_str_new_cstr(hash + 1) : Qnil;
-  RB_OBJ_WRITTEN(rule, Qundef, r->as.reference.value);
-  RB_OBJ_WRITTEN(rule, Qundef, r->as.reference.fragment);
+  RB_OBJ_WRITE(rule, &r->as.reference.fragment, hash ? rb_str_new_cstr(hash + 1) : Qnil);
   return rb_obj_freeze(rule);
 }
 
@@ -81,10 +79,10 @@ static VALUE compile_string(VALUE node, VALUE schema) {
   VALUE obj = rule_new(RULE_STRING);
   rule_t *r;
   TypedData_Get_Struct(obj, rule_t, &rule_type, r);
-  r->as.string.max_length = hget(schema, STATIC_STRING(MAX_LENGTH));
-  r->as.string.min_length = hget(schema, STATIC_STRING(MIN_LENGTH));
-  r->as.string.pattern = snapshot(hget(schema, STATIC_STRING(PATTERN)));
-  r->as.string.format = rb_funcall(node, id_format, 0);
+  RB_OBJ_WRITE(obj, &r->as.string.max_length, hget(schema, STATIC_STRING(MAX_LENGTH)));
+  RB_OBJ_WRITE(obj, &r->as.string.min_length, hget(schema, STATIC_STRING(MIN_LENGTH)));
+  RB_OBJ_WRITE(obj, &r->as.string.pattern, snapshot(hget(schema, STATIC_STRING(PATTERN))));
+  RB_OBJ_WRITE(obj, &r->as.string.format, rb_funcall(node, id_format, 0));
   VALUE dialect = rb_funcall(node, id_dialect, 0);
   r->as.string.format_assertion = RTEST(rb_funcall(dialect, id_format_assertion_p, 0));
   VALUE encoding = hget(schema, STATIC_STRING(CONTENT_ENCODING));
@@ -92,10 +90,6 @@ static VALUE compile_string(VALUE node, VALUE schema) {
   r->as.string.decode_base64 = RB_TYPE_P(encoding, T_STRING) && rb_str_equal(encoding, STATIC_STRING(BASE64));
   r->as.string.parse_json =
       RB_TYPE_P(media_type, T_STRING) && rb_str_equal(media_type, STATIC_STRING(APPLICATION_JSON));
-  RB_OBJ_WRITTEN(obj, Qundef, r->as.string.max_length);
-  RB_OBJ_WRITTEN(obj, Qundef, r->as.string.min_length);
-  RB_OBJ_WRITTEN(obj, Qundef, r->as.string.pattern);
-  RB_OBJ_WRITTEN(obj, Qundef, r->as.string.format);
   return rb_obj_freeze(obj);
 }
 
@@ -112,39 +106,38 @@ static VALUE compile_array(VALUE self, VALUE node, VALUE parent, VALUE schema) {
   rule_t *r;
   TypedData_Get_Struct(obj, rule_t, &rule_type, r);
   r->as.array.items_list = false;
-  r->as.array.max_items = hget(schema, STATIC_STRING(MAX_ITEMS));
-  r->as.array.min_items = hget(schema, STATIC_STRING(MIN_ITEMS));
+  RB_OBJ_WRITE(obj, &r->as.array.max_items, hget(schema, STATIC_STRING(MAX_ITEMS)));
+  RB_OBJ_WRITE(obj, &r->as.array.min_items, hget(schema, STATIC_STRING(MIN_ITEMS)));
   r->as.array.unique = RTEST(hget(schema, STATIC_STRING(UNIQUE_ITEMS)));
   VALUE prefix = hget(schema, STATIC_STRING(PREFIX_ITEMS));
   if (RB_TYPE_P(prefix, T_ARRAY))
-    r->as.array.prefix_items = compile_program_list(self, node, parent, prefix, STATIC_STRING(PREFIX_ITEMS));
+    RB_OBJ_WRITE(obj, &r->as.array.prefix_items,
+                 compile_program_list(self, node, parent, prefix, STATIC_STRING(PREFIX_ITEMS)));
   VALUE items = hget(schema, STATIC_STRING(ITEMS));
   if (RB_TYPE_P(items, T_ARRAY)) {
-    r->as.array.items = compile_program_list(self, node, parent, items, STATIC_STRING(ITEMS));
+    RB_OBJ_WRITE(obj, &r->as.array.items, compile_program_list(self, node, parent, items, STATIC_STRING(ITEMS)));
     r->as.array.items_list = true;
   } else if (!NIL_P(items))
-    r->as.array.items = compile_child(self, node_child(node, STATIC_STRING(ITEMS), Qnil, false), parent);
+    RB_OBJ_WRITE(obj, &r->as.array.items,
+                 compile_child(self, node_child(node, STATIC_STRING(ITEMS), Qnil, false), parent));
   if (hkey(schema, STATIC_STRING(ADDITIONAL_ITEMS)))
-    r->as.array.additional =
-        compile_child(self, node_child(node, STATIC_STRING(ADDITIONAL_ITEMS), Qnil, false), parent);
+    RB_OBJ_WRITE(obj, &r->as.array.additional,
+                 compile_child(self, node_child(node, STATIC_STRING(ADDITIONAL_ITEMS), Qnil, false), parent));
   if (hkey(schema, STATIC_STRING(CONTAINS)))
-    r->as.array.contains = compile_child(self, node_child(node, STATIC_STRING(CONTAINS), Qnil, false), parent);
-  r->as.array.min_contains =
-      hkey(schema, STATIC_STRING(MIN_CONTAINS)) ? hget(schema, STATIC_STRING(MIN_CONTAINS)) : INT2NUM(1);
-  r->as.array.max_contains =
-      hkey(schema, STATIC_STRING(MAX_CONTAINS)) ? hget(schema, STATIC_STRING(MAX_CONTAINS)) : DBL2NUM(HUGE_VAL);
+    RB_OBJ_WRITE(obj, &r->as.array.contains,
+                 compile_child(self, node_child(node, STATIC_STRING(CONTAINS), Qnil, false), parent));
+  RB_OBJ_WRITE(obj, &r->as.array.min_contains,
+               hkey(schema, STATIC_STRING(MIN_CONTAINS)) ? hget(schema, STATIC_STRING(MIN_CONTAINS)) : INT2NUM(1));
+  RB_OBJ_WRITE(obj, &r->as.array.max_contains,
+               hkey(schema, STATIC_STRING(MAX_CONTAINS)) ? hget(schema, STATIC_STRING(MAX_CONTAINS))
+                                                         : DBL2NUM(HUGE_VAL));
   if (hkey(schema, STATIC_STRING(UNEVALUATED_ITEMS))) {
-    r->as.array.unevaluated =
-        compile_child(self, node_child(node, STATIC_STRING(UNEVALUATED_ITEMS), Qnil, false), parent);
+    RB_OBJ_WRITE(obj, &r->as.array.unevaluated,
+                 compile_child(self, node_child(node, STATIC_STRING(UNEVALUATED_ITEMS), Qnil, false), parent));
     program_t *p;
     TypedData_Get_Struct(parent, program_t, &program_type, p);
     p->flags |= FLAG_EVALUATION;
   }
-  VALUE *values[] = {&r->as.array.max_items,    &r->as.array.min_items,    &r->as.array.prefix_items,
-                     &r->as.array.items,        &r->as.array.additional,   &r->as.array.contains,
-                     &r->as.array.min_contains, &r->as.array.max_contains, &r->as.array.unevaluated};
-  for (int i = 0; i < 9; i++)
-    RB_OBJ_WRITTEN(obj, Qundef, *values[i]);
   return rb_obj_freeze(obj);
 }
 
@@ -167,38 +160,33 @@ static VALUE compile_object(VALUE self, VALUE node, VALUE parent, VALUE schema) 
   VALUE obj = rule_new(RULE_OBJECT);
   rule_t *r;
   TypedData_Get_Struct(obj, rule_t, &rule_type, r);
-  r->as.object.max_properties = hget(schema, STATIC_STRING(MAX_PROPERTIES));
-  r->as.object.min_properties = hget(schema, STATIC_STRING(MIN_PROPERTIES));
-  r->as.object.required = snapshot(hget(schema, STATIC_STRING(REQUIRED)));
-  r->as.object.properties = compile_map(self, node, parent, schema, STATIC_STRING(PROPERTIES));
+  RB_OBJ_WRITE(obj, &r->as.object.max_properties, hget(schema, STATIC_STRING(MAX_PROPERTIES)));
+  RB_OBJ_WRITE(obj, &r->as.object.min_properties, hget(schema, STATIC_STRING(MIN_PROPERTIES)));
+  RB_OBJ_WRITE(obj, &r->as.object.required, snapshot(hget(schema, STATIC_STRING(REQUIRED))));
+  RB_OBJ_WRITE(obj, &r->as.object.properties, compile_map(self, node, parent, schema, STATIC_STRING(PROPERTIES)));
   VALUE map = compile_map(self, node, parent, schema, STATIC_STRING(PATTERN_PROPERTIES));
-  r->as.object.patterns = RHASH_EMPTY_P(map) ? Qnil : map;
-  r->as.object.pattern_names =
-      NIL_P(r->as.object.patterns) ? Qnil : rb_obj_freeze(rb_funcall(r->as.object.patterns, id_keys, 0));
+  RB_OBJ_WRITE(obj, &r->as.object.patterns, RHASH_EMPTY_P(map) ? Qnil : map);
+  RB_OBJ_WRITE(obj, &r->as.object.pattern_names,
+               NIL_P(r->as.object.patterns) ? Qnil : rb_obj_freeze(rb_funcall(r->as.object.patterns, id_keys, 0)));
   if (hkey(schema, STATIC_STRING(ADDITIONAL_PROPERTIES)))
-    r->as.object.additional =
-        compile_child(self, node_child(node, STATIC_STRING(ADDITIONAL_PROPERTIES), Qnil, false), parent);
+    RB_OBJ_WRITE(obj, &r->as.object.additional,
+                 compile_child(self, node_child(node, STATIC_STRING(ADDITIONAL_PROPERTIES), Qnil, false), parent));
   if (hkey(schema, STATIC_STRING(PROPERTY_NAMES)))
-    r->as.object.property_names =
-        compile_child(self, node_child(node, STATIC_STRING(PROPERTY_NAMES), Qnil, false), parent);
-  r->as.object.dependencies = compile_dependencies(self, node, parent, schema);
+    RB_OBJ_WRITE(obj, &r->as.object.property_names,
+                 compile_child(self, node_child(node, STATIC_STRING(PROPERTY_NAMES), Qnil, false), parent));
+  RB_OBJ_WRITE(obj, &r->as.object.dependencies, compile_dependencies(self, node, parent, schema));
   VALUE dep_req = hget(schema, STATIC_STRING(DEPENDENT_REQUIRED));
-  r->as.object.dependent_required = NIL_P(dep_req) || RHASH_EMPTY_P(dep_req) ? Qnil : snapshot(dep_req);
+  RB_OBJ_WRITE(obj, &r->as.object.dependent_required,
+               NIL_P(dep_req) || RHASH_EMPTY_P(dep_req) ? Qnil : snapshot(dep_req));
   map = compile_map(self, node, parent, schema, STATIC_STRING(DEPENDENT_SCHEMAS));
-  r->as.object.dependent_schemas = RHASH_EMPTY_P(map) ? Qnil : map;
+  RB_OBJ_WRITE(obj, &r->as.object.dependent_schemas, RHASH_EMPTY_P(map) ? Qnil : map);
   if (hkey(schema, STATIC_STRING(UNEVALUATED_PROPERTIES))) {
-    r->as.object.unevaluated =
-        compile_child(self, node_child(node, STATIC_STRING(UNEVALUATED_PROPERTIES), Qnil, false), parent);
+    RB_OBJ_WRITE(obj, &r->as.object.unevaluated,
+                 compile_child(self, node_child(node, STATIC_STRING(UNEVALUATED_PROPERTIES), Qnil, false), parent));
     program_t *p;
     TypedData_Get_Struct(parent, program_t, &program_type, p);
     p->flags |= FLAG_EVALUATION;
   }
-  VALUE *values[] = {&r->as.object.max_properties,     &r->as.object.min_properties,    &r->as.object.required,
-                     &r->as.object.properties,         &r->as.object.patterns,          &r->as.object.pattern_names,
-                     &r->as.object.additional,         &r->as.object.property_names,    &r->as.object.dependencies,
-                     &r->as.object.dependent_required, &r->as.object.dependent_schemas, &r->as.object.unevaluated};
-  for (int i = 0; i < 12; i++)
-    RB_OBJ_WRITTEN(obj, Qundef, *values[i]);
   return rb_obj_freeze(obj);
 }
 
@@ -223,14 +211,14 @@ static void compile_combiners(VALUE self, VALUE node, VALUE program, VALUE schem
     VALUE obj = rule_new(RULE_CONDITIONAL);
     rule_t *r;
     TypedData_Get_Struct(obj, rule_t, &rule_type, r);
-    r->as.conditional.condition = compile_child(self, node_child(node, STATIC_STRING(IF), Qnil, false), program);
+    RB_OBJ_WRITE(obj, &r->as.conditional.condition,
+                 compile_child(self, node_child(node, STATIC_STRING(IF), Qnil, false), program));
     if (hkey(schema, STATIC_STRING(THEN)))
-      r->as.conditional.then_branch = compile_child(self, node_child(node, STATIC_STRING(THEN), Qnil, false), program);
+      RB_OBJ_WRITE(obj, &r->as.conditional.then_branch,
+                   compile_child(self, node_child(node, STATIC_STRING(THEN), Qnil, false), program));
     if (hkey(schema, STATIC_STRING(ELSE)))
-      r->as.conditional.else_branch = compile_child(self, node_child(node, STATIC_STRING(ELSE), Qnil, false), program);
-    RB_OBJ_WRITTEN(obj, Qundef, r->as.conditional.condition);
-    RB_OBJ_WRITTEN(obj, Qundef, r->as.conditional.then_branch);
-    RB_OBJ_WRITTEN(obj, Qundef, r->as.conditional.else_branch);
+      RB_OBJ_WRITE(obj, &r->as.conditional.else_branch,
+                   compile_child(self, node_child(node, STATIC_STRING(ELSE), Qnil, false), program));
     emit(program, OP_CONDITIONAL, rb_obj_freeze(obj));
   }
 }
@@ -297,8 +285,7 @@ VALUE compiler_compile(VALUE self, VALUE node) {
           else if (!strcmp(name, "string"))
             r->mask |= TYPE_STRING;
         }
-        r->as.types.names = snapshot(types);
-        RB_OBJ_WRITTEN(rule, Qundef, r->as.types.names);
+        RB_OBJ_WRITE(rule, &r->as.types.names, snapshot(types));
         emit(program, OP_TYPES, rb_obj_freeze(rule));
       } else {
         const char *name = StringValueCStr(types);

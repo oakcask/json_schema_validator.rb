@@ -144,7 +144,7 @@ static inline evaluation_t evaluation(bool valid) {
 static inline bool has_location(VALUE list, VALUE item) {
   if (NIL_P(list))
     return false;
-  return RB_TYPE_P(list, T_ARRAY) ? RTEST(rb_ary_includes(list, item)) : RTEST(rb_equal(list, item));
+  return RB_TYPE_P(list, T_HASH) ? rb_hash_lookup2(list, item, Qundef) != Qundef : RTEST(rb_equal(list, item));
 }
 
 static inline bool number_p(VALUE value) {
