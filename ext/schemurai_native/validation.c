@@ -104,6 +104,9 @@ static void check_string_detail(evaluator_t *e, rule_t *r, VALUE value) {
         rb_protect(protected_func,
                    (VALUE) & (struct protected_call){mNativeSupport, id_regexp, 1, {r->as.string.pattern}}, &state);
     if (state) {
+      VALUE error = rb_errinfo();
+      if (!RTEST(rb_obj_is_kind_of(error, rb_eRegexpError)))
+        rb_jump_tag(state);
       rb_set_errinfo(Qnil);
       VALUE a[] = {r->as.string.pattern};
       add_error(e, STATIC_STRING(PATTERN), error_message(id_error_invalid_pattern, 1, a), true);
@@ -227,10 +230,9 @@ static evaluation_t check_object_detail(evaluator_t *e, rule_t *r, VALUE value, 
       detail_at(e, child, item, name, true, STATIC_STRING(PROPERTIES), name, true);
       add_unique(&out.properties, name);
     }
-    if (!NIL_P(r->as.object.patterns)) {
-      VALUE patterns = rb_funcall(r->as.object.patterns, id_keys, 0);
-      for (long j = 0; j < RARRAY_LEN(patterns); j++) {
-        VALUE pattern = rb_ary_entry(patterns, j);
+    if (!NIL_P(r->as.object.pattern_names)) {
+      for (long j = 0; j < RARRAY_LEN(r->as.object.pattern_names); j++) {
+        VALUE pattern = rb_ary_entry(r->as.object.pattern_names, j);
         if (RTEST(rb_funcall(regexp_for(e, pattern), id_match_p, 1, name))) {
           matched = true;
           detail_at(e, rb_hash_aref(r->as.object.patterns, pattern), item, name, true,
@@ -513,28 +515,28 @@ static evaluation_t evaluate_detail(evaluator_t *e, VALUE program, VALUE instanc
   out.valid = e->error_count == before;
   return out;
 }
+static VALUE evaluator_validate_body(VALUE arg) {
+  struct evaluator_call *call = (struct evaluator_call *)arg;
+  evaluator_t *e = call->e;
+  evaluate_detail(e, e->root, call->instance);
+  if (e->unsupported_instance) {
+    RB_OBJ_WRITE(call->self, &e->errors, Qnil);
+    RB_OBJ_WRITE(call->self, &e->instance_path, Qnil);
+    RB_OBJ_WRITE(call->self, &e->schema_path, Qnil);
+    return rb_funcall(ruby_evaluator(e), id_validate, 1, call->instance);
+  }
+  return rb_class_new_instance(1, &e->errors, cResult);
+}
 VALUE evaluator_validate(VALUE self, VALUE instance) {
   evaluator_t *e;
   TypedData_Get_Struct(self, evaluator_t, &evaluator_type, e);
   RB_OBJ_WRITE(self, &e->errors, rb_ary_new());
   RB_OBJ_WRITE(self, &e->instance_path, rb_ary_new());
   RB_OBJ_WRITE(self, &e->schema_path, rb_ary_new());
-  if (PROGRAM_PTR(e->root)->flags & FLAG_DYNAMIC_SCOPE)
-    rb_ary_clear(e->dynamic_scope);
+  rb_ary_clear(e->dynamic_scope);
   rb_hash_clear(e->active);
   e->error_count = 0;
   e->unsupported_instance = false;
-  evaluate_detail(e, e->root, instance);
-  rb_hash_clear(e->active);
-  if (e->unsupported_instance) {
-    RB_OBJ_WRITE(self, &e->errors, Qnil);
-    RB_OBJ_WRITE(self, &e->instance_path, Qnil);
-    RB_OBJ_WRITE(self, &e->schema_path, Qnil);
-    return rb_funcall(ruby_evaluator(e), id_validate, 1, instance);
-  }
-  VALUE result = rb_class_new_instance(1, &e->errors, cResult);
-  RB_OBJ_WRITE(self, &e->errors, Qnil);
-  RB_OBJ_WRITE(self, &e->instance_path, Qnil);
-  RB_OBJ_WRITE(self, &e->schema_path, Qnil);
-  return result;
+  struct evaluator_call call = {self, instance, e};
+  return rb_ensure(evaluator_validate_body, (VALUE)&call, evaluator_cleanup, (VALUE)&call);
 }

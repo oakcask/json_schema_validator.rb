@@ -229,6 +229,7 @@ VALUE compiler_compile(VALUE self, VALUE node) {
   VALUE cached = rb_hash_lookup2(c->programs, node, Qundef);
   if (cached != Qundef)
     return cached;
+  rb_check_frozen(self);
   VALUE program = program_alloc(cProgram);
   program_t *p;
   TypedData_Get_Struct(program, program_t, &program_type, p);

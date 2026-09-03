@@ -127,6 +127,11 @@ typedef struct {
   long error_count;
 } evaluator_t;
 
+struct evaluator_call {
+  VALUE self, instance;
+  evaluator_t *e;
+};
+
 typedef struct {
   bool valid;
   VALUE properties, items;
@@ -177,6 +182,7 @@ VALUE safe_target(evaluator_t *e, VALUE source, VALUE rule, uint8_t opcode, int 
 bool supported_value(VALUE value);
 evaluation_t evaluate_program_mode(evaluator_t *e, VALUE program, VALUE instance, bool collect);
 VALUE ruby_evaluator(evaluator_t *e);
+VALUE evaluator_cleanup(VALUE arg);
 
 #define PROGRAM_PTR(value) ((program_t *)RTYPEDDATA_DATA(value))
 #define RULE_PTR(value) ((rule_t *)RTYPEDDATA_DATA(value))

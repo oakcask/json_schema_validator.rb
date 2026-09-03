@@ -189,12 +189,18 @@ VALUE regexp_for(evaluator_t *e, VALUE pattern) {
   rb_hash_aset(e->regexps, pattern, regexp);
   return regexp;
 }
+struct regexp_call {
+  evaluator_t *e;
+  VALUE pattern, value;
+};
+static VALUE regexp_match_func(VALUE arg) {
+  struct regexp_call *call = (struct regexp_call *)arg;
+  VALUE regexp = regexp_for(call->e, call->pattern);
+  return rb_funcall(regexp, id_match_p, 1, call->value);
+}
 static bool regexp_matches(evaluator_t *e, VALUE pattern, VALUE value) {
-  VALUE regexp = regexp_for(e, pattern);
-  if (rb_enc_get_index(value) == rb_utf8_encindex() && rb_enc_str_coderange(value) != ENC_CODERANGE_BROKEN)
-    return RTEST(rb_funcall(regexp, id_match_p, 1, value));
-  struct protected_call call = {regexp, id_match_p, 1, {value}};
-  return protected_truth(&call);
+  struct regexp_call call = {e, pattern, value};
+  return RTEST(regexp_match_func((VALUE)&call));
 }
 static bool valid_string(evaluator_t *e, rule_t *r, VALUE value) {
   long length = rb_str_strlen(value);
@@ -202,8 +208,20 @@ static bool valid_string(evaluator_t *e, rule_t *r, VALUE value) {
     return false;
   if (!NIL_P(r->as.string.min_length) && length < NUM2LONG(r->as.string.min_length))
     return false;
-  if (!NIL_P(r->as.string.pattern) && !regexp_matches(e, r->as.string.pattern, value))
-    return false;
+  if (!NIL_P(r->as.string.pattern)) {
+    struct regexp_call call = {e, r->as.string.pattern, value};
+    int state = 0;
+    VALUE matched = rb_protect(regexp_match_func, (VALUE)&call, &state);
+    if (state) {
+      VALUE error = rb_errinfo();
+      if (!RTEST(rb_obj_is_kind_of(error, rb_eRegexpError)))
+        rb_jump_tag(state);
+      rb_set_errinfo(Qnil);
+      return false;
+    }
+    if (!RTEST(matched))
+      return false;
+  }
   if (!NIL_P(r->as.string.format) && (e->format || r->as.string.format_assertion)) {
     struct protected_call c = {r->as.string.format, id_call, 1, {value}};
     if (!protected_truth(&c))
@@ -886,16 +904,30 @@ VALUE ruby_evaluator(evaluator_t *e) {
   VALUE argv[] = {e->graph, p->node, kwargs};
   return rb_class_new_instance_kw(3, argv, cRubyEvaluator, RB_PASS_KEYWORDS);
 }
+VALUE evaluator_cleanup(VALUE arg) {
+  struct evaluator_call *call = (struct evaluator_call *)arg;
+  evaluator_t *e = call->e;
+  rb_hash_clear(e->active);
+  rb_ary_clear(e->dynamic_scope);
+  RB_OBJ_WRITE(call->self, &e->errors, Qnil);
+  RB_OBJ_WRITE(call->self, &e->instance_path, Qnil);
+  RB_OBJ_WRITE(call->self, &e->schema_path, Qnil);
+  return Qnil;
+}
+static VALUE evaluator_valid_body(VALUE arg) {
+  struct evaluator_call *call = (struct evaluator_call *)arg;
+  evaluator_t *e = call->e;
+  bool valid = evaluate_program(e, e->root, call->instance).valid;
+  if (e->unsupported_instance)
+    return rb_funcall(ruby_evaluator(e), id_valid_p, 1, call->instance);
+  return valid ? Qtrue : Qfalse;
+}
 VALUE evaluator_valid(VALUE self, VALUE instance) {
   evaluator_t *e;
   TypedData_Get_Struct(self, evaluator_t, &evaluator_type, e);
-  if (PROGRAM_PTR(e->root)->flags & FLAG_DYNAMIC_SCOPE)
-    rb_ary_clear(e->dynamic_scope);
+  rb_ary_clear(e->dynamic_scope);
   rb_hash_clear(e->active);
   e->unsupported_instance = false;
-  bool valid = evaluate_program(e, e->root, instance).valid;
-  rb_hash_clear(e->active);
-  if (e->unsupported_instance)
-    return rb_funcall(ruby_evaluator(e), id_valid_p, 1, instance);
-  return valid ? Qtrue : Qfalse;
+  struct evaluator_call call = {self, instance, e};
+  return rb_ensure(evaluator_valid_body, (VALUE)&call, evaluator_cleanup, (VALUE)&call);
 }

@@ -178,6 +178,72 @@ RSpec.describe "the VM backend" do
     expect(validator.valid?({"items" => [1, "tail"], "text" => "x"})).to be(true)
   end
 
+  it "preserves regexp encoding errors across validity and detailed evaluation" do # rubocop:disable RSpec/ExampleLength
+    invalid_value = +"\xFF"
+    invalid_value.force_encoding(Encoding::UTF_8)
+    invalid_pattern = invalid_value.dup
+    binary_name = "\xFF".b
+    cases = [
+      [{"pattern" => "."}, invalid_value],
+      [{"pattern" => invalid_pattern}, "value"],
+      [{"patternProperties" => {"." => false}}, {invalid_value => 1}],
+      [{"patternProperties" => {"é" => false}}, {binary_name => 1}]
+    ]
+    normalize = lambda do |result|
+      next result unless result.is_a?(Schemurai::Result)
+
+      result.errors.map { |error| [error.keyword, error.instance_path, error.schema_path, error.message.class] }
+    end
+
+    cases.each do |schema, instance|
+      ruby_validator = Schemurai.compile(schema, backend: :ruby)
+      native_validator = Schemurai.compile(schema, backend: :vm)
+
+      %i[valid? validate].each do |operation|
+        expected = begin
+          normalize.call(ruby_validator.public_send(operation, instance))
+        rescue => error
+          [error.class, error.message]
+        end
+        actual = begin
+          normalize.call(native_validator.public_send(operation, instance))
+        rescue => error
+          [error.class, error.message]
+        end
+
+        expect(actual).to eq(expected)
+      end
+    end
+  end
+
+  it "releases recursive evaluation state when regexp matching raises", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
+    schema = {
+      "$id" => "urn:exception-node",
+      "type" => "object",
+      "properties" => {
+        "next" => {"$ref" => "urn:exception-node"},
+        "value" => {"pattern" => "."}
+      }
+    }
+
+    %i[valid? validate].each do |operation|
+      validator = Schemurai.compile(schema, backend: :vm)
+      evaluator = validator.instance_variable_get(:@evaluator)
+      instance = {"value" => +"\xFF"}
+      instance.fetch("value").force_encoding(Encoding::UTF_8)
+      100.times { instance = {"next" => instance} }
+
+      expect { validator.public_send(operation, instance) }.to raise_error(ArgumentError, /invalid byte sequence/)
+      GC.start
+      GC.compact
+
+      retained = ObjectSpace.reachable_objects_from(evaluator)
+      expect(retained.grep(Array)).to all(be_empty)
+      expect(retained.grep(Hash).any? { |hash| hash.values.any?(Hash) }).to be(false)
+      expect(validator.valid?({"value" => "ok"})).to be(true)
+    end
+  end
+
   it "falls back for unsupported nested instance values reached by a program", :aggregate_failures do
     value = +"x"
     value.define_singleton_method(:length) { 2 }
