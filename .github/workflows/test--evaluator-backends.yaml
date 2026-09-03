@@ -50,6 +50,10 @@ jobs:
           SCHEMURAI_DIFFERENTIAL_BACKEND: vm
 
   address-sanitizer:
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby-version: ["3.4", "4.0"]
     runs-on: ubuntu-24.04
     env:
       ASAN_OPTIONS: detect_leaks=0
@@ -59,21 +63,28 @@ jobs:
           submodules: true
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
-          ruby-version: asan-release
+          ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true
-          cache-version: vm-address-sanitizer-${{ hashFiles('Gemfile.lock') }}
+          cache-version: vm-address-sanitizer-${{ matrix.ruby-version }}-${{ hashFiles('Gemfile.lock') }}
       - name: Configure native VM evaluator
         run: ruby extconf.rb
         working-directory: ext/schemurai_native
+        env:
+          CFLAGS: -fsanitize=address -fno-omit-frame-pointer -O1
+          DLDFLAGS: -fsanitize=address
       - name: Compile native VM evaluator
         run: make
         working-directory: ext/schemurai_native
       - name: Exercise native VM under AddressSanitizer
-        run: bundle exec rspec -Ilib spec/vm_spec.rb test/evaluator_backend_test.rb
+        run: env LD_PRELOAD="$(gcc -print-file-name=libasan.so)" bundle exec rspec -Ilib spec/vm_spec.rb test/evaluator_backend_test.rb
         env:
           SCHEMURAI_DIFFERENTIAL_BACKEND: vm
 
   undefined-behavior-sanitizer:
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby-version: ["3.4", "4.0"]
     runs-on: ubuntu-latest
     env:
       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
@@ -83,9 +94,9 @@ jobs:
           submodules: true
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
-          ruby-version: "4.0"
+          ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true
-          cache-version: vm-undefined-sanitizer-${{ hashFiles('Gemfile.lock') }}
+          cache-version: vm-undefined-sanitizer-${{ matrix.ruby-version }}-${{ hashFiles('Gemfile.lock') }}
       - name: Configure native VM evaluator
         run: ruby extconf.rb
         working-directory: ext/schemurai_native
