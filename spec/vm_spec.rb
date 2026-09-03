@@ -307,13 +307,14 @@ RSpec.describe "the VM backend" do
     ractor_depth = Gem.win_platform? ? 1 : 100
     ractor_repetitions = 20
 
+    GC.start
+    GC.compact
+
     ractors = 4.times.map do
       Ractor.new(registry, ractor_depth, ractor_repetitions) do |shared, depth, repetitions|
         validator = shared.validator_for("urn:node")
         instance = {}
         depth.times { instance = {"child" => instance} }
-        GC.start
-        GC.compact
         repetitions.times.all? { validator.valid?(instance) }
       end
     end
