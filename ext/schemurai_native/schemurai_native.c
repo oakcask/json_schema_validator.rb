@@ -56,16 +56,17 @@ const rb_data_type_t program_type = {"Schemurai::VM::Program",
 
 enum rule_value_action { RULE_VALUE_INITIALIZE, RULE_VALUE_MARK, RULE_VALUE_COMPACT };
 
+static void rule_value(VALUE *value, enum rule_value_action action) {
+  if (action == RULE_VALUE_INITIALIZE)
+    *value = Qnil;
+  else if (action == RULE_VALUE_MARK)
+    rb_gc_mark_movable(*value);
+  else
+    *value = rb_gc_location(*value);
+}
+
 static void rule_each_value(rule_t *r, enum rule_value_action action) {
-#define VISIT(field)                                                                                                   \
-  do {                                                                                                                 \
-    if (action == RULE_VALUE_INITIALIZE)                                                                                \
-      r->as.field = Qnil;                                                                                              \
-    else if (action == RULE_VALUE_MARK)                                                                                \
-      rb_gc_mark_movable(r->as.field);                                                                                 \
-    else                                                                                                               \
-      r->as.field = rb_gc_location(r->as.field);                                                                       \
-  } while (0)
+#define VISIT(field) rule_value(&r->as.field, action)
   switch (r->kind) {
   case RULE_REFERENCE:
     VISIT(reference.value);
