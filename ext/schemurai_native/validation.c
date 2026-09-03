@@ -138,17 +138,8 @@ static evaluation_t check_array_detail(evaluator_t *e, rule_t *r, VALUE value, e
     VALUE a[] = {STATIC_STRING(MIN_ITEMS), r->as.array.min_items, LONG2NUM(len)};
     add_error(e, STATIC_STRING(MIN_ITEMS), error_message(id_error_size, 3, a), true);
   }
-  if (r->as.array.unique) {
-    bool duplicate = false;
-    for (long i = 1; i < len && !duplicate; i++)
-      for (long j = 0; j < i; j++)
-        if (json_equal(e, rb_ary_entry(value, j), rb_ary_entry(value, i))) {
-          duplicate = true;
-          break;
-        }
-    if (duplicate)
-      add_message0(e, STATIC_STRING(UNIQUE_ITEMS), id_error_unique_items);
-  }
+  if (r->as.array.unique && !unique_items(e, value))
+    add_message0(e, STATIC_STRING(UNIQUE_ITEMS), id_error_unique_items);
   if (!NIL_P(r->as.array.prefix_items))
     for (long i = 0; i < RARRAY_LEN(r->as.array.prefix_items) && i < len; i++) {
       detail_at(e, rb_ary_entry(r->as.array.prefix_items, i), rb_ary_entry(value, i), LONG2NUM(i), true,

@@ -54,16 +54,17 @@ const rb_data_type_t program_type = {"Schemurai::VM::Program",
                                      RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED |
                                          RUBY_TYPED_FROZEN_SHAREABLE};
 
-#define MARK_RULE_VALUE(field) rb_gc_mark_movable(r->as.field)
-#define COMPACT_RULE_VALUE(field) r->as.field = rb_gc_location(r->as.field)
-static void rule_each_value(rule_t *r, bool compact) {
+enum rule_value_action { RULE_VALUE_INITIALIZE, RULE_VALUE_MARK, RULE_VALUE_COMPACT };
+
+static void rule_each_value(rule_t *r, enum rule_value_action action) {
 #define VISIT(field)                                                                                                   \
   do {                                                                                                                 \
-    if (compact) {                                                                                                     \
-      COMPACT_RULE_VALUE(field);                                                                                       \
-    } else {                                                                                                           \
-      MARK_RULE_VALUE(field);                                                                                          \
-    }                                                                                                                  \
+    if (action == RULE_VALUE_INITIALIZE)                                                                                \
+      r->as.field = Qnil;                                                                                              \
+    else if (action == RULE_VALUE_MARK)                                                                                \
+      rb_gc_mark_movable(r->as.field);                                                                                 \
+    else                                                                                                               \
+      r->as.field = rb_gc_location(r->as.field);                                                                       \
   } while (0)
   switch (r->kind) {
   case RULE_REFERENCE:
@@ -123,13 +124,11 @@ static void rule_each_value(rule_t *r, bool compact) {
 #undef VISIT
 }
 static void rule_mark(void *ptr) {
-  rule_each_value(ptr, false);
+  rule_each_value(ptr, RULE_VALUE_MARK);
 }
 static void rule_compact(void *ptr) {
-  rule_each_value(ptr, true);
+  rule_each_value(ptr, RULE_VALUE_COMPACT);
 }
-#undef MARK_RULE_VALUE
-#undef COMPACT_RULE_VALUE
 static size_t rule_size(const void *ptr) {
   return sizeof(rule_t);
 }
@@ -161,9 +160,15 @@ const rb_data_type_t compiler_type = {"Schemurai::VM::Compiler",
 
 static void evaluator_mark(void *ptr) {
   evaluator_t *e = ptr;
-  VALUE *values = &e->graph;
-  for (int i = 0; i < 10; i++)
-    rb_gc_mark_movable(values[i]);
+  rb_gc_mark_movable(e->graph);
+  rb_gc_mark_movable(e->compiler);
+  rb_gc_mark_movable(e->root);
+  rb_gc_mark_movable(e->regexps);
+  rb_gc_mark_movable(e->resolved);
+  rb_gc_mark_movable(e->dynamic_scope);
+  rb_gc_mark_movable(e->instance_path);
+  rb_gc_mark_movable(e->schema_path);
+  rb_gc_mark_movable(e->errors);
   for (size_t i = 0; i < e->active_length; i++) {
     rb_gc_mark_movable(e->active[i].source);
     rb_gc_mark_movable(e->active[i].instance);
@@ -177,9 +182,15 @@ static void evaluator_mark(void *ptr) {
 }
 static void evaluator_compact(void *ptr) {
   evaluator_t *e = ptr;
-  VALUE *values = &e->graph;
-  for (int i = 0; i < 10; i++)
-    values[i] = rb_gc_location(values[i]);
+  e->graph = rb_gc_location(e->graph);
+  e->compiler = rb_gc_location(e->compiler);
+  e->root = rb_gc_location(e->root);
+  e->regexps = rb_gc_location(e->regexps);
+  e->resolved = rb_gc_location(e->resolved);
+  e->dynamic_scope = rb_gc_location(e->dynamic_scope);
+  e->instance_path = rb_gc_location(e->instance_path);
+  e->schema_path = rb_gc_location(e->schema_path);
+  e->errors = rb_gc_location(e->errors);
   for (size_t i = 0; i < e->active_length; i++) {
     e->active[i].source = rb_gc_location(e->active[i].source);
     e->active[i].instance = rb_gc_location(e->active[i].instance);
@@ -225,9 +236,8 @@ VALUE rule_new(uint8_t kind) {
   rule_t *r;
   VALUE obj = TypedData_Make_Struct(cRule, rule_t, &rule_type, r);
   r->kind = kind;
-  VALUE *slot = (VALUE *)&r->as;
-  for (size_t i = 0; i < sizeof(r->as) / sizeof(VALUE); i++)
-    slot[i] = Qnil;
+  r->mask = 0;
+  rule_each_value(r, RULE_VALUE_INITIALIZE);
   return obj;
 }
 

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "spec_helper"
+require "timeout"
 
 RSpec.describe "the VM backend" do
   it "keeps native instruction data behind the evaluator boundary", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
@@ -32,6 +33,50 @@ RSpec.describe "the VM backend" do
     validator = Schemurai.compile({"type" => "integer", "minimum" => 0}, backend: :vm)
 
     expect(validator.validate(-1.5).errors.map(&:keyword)).to eq(%w[type minimum])
+  end
+
+  it "does not retain decimal conversions between validations" do # rubocop:disable RSpec/ExampleLength
+    validator = Schemurai.compile({"multipleOf" => 0.1}, backend: :vm)
+    GC.start
+    before = ObjectSpace.each_object(Rational).count
+
+    250.times { |index| validator.valid?(index + 0.12345) }
+    GC.start
+
+    expect(ObjectSpace.each_object(Rational).count - before).to be <= 1
+  end
+
+  it "checks unique scalar items in linear time", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
+    validator = Schemurai.compile({"uniqueItems" => true}, backend: :vm)
+    values = Array.new(50_000) { |index| index }
+
+    expect { Timeout.timeout(3) { validator.valid?(values) } }.not_to raise_error
+    expect(validator.valid?([1, 1.0])).to be(false)
+    expect(validator.valid?([-0.0, 0])).to be(false)
+    expect(validator.valid?([false, 0])).to be(true)
+    expect(validator.valid?([[1], [1.0]])).to be(false)
+    expect(validator.valid?([{"value" => 1}, {"value" => 1.0}])).to be(false)
+  end
+
+  it "keeps every native rule layout valid across GC compaction" do # rubocop:disable RSpec/ExampleLength
+    schema = {
+      "$schema" => "https://json-schema.org/draft/2020-12/schema",
+      "type" => "object",
+      "allOf" => [{"required" => ["number", "text", "items"]}],
+      "if" => {"properties" => {"enabled" => {"const" => true}}},
+      "then" => {"dependentRequired" => {"enabled" => ["number"]}},
+      "properties" => {
+        "number" => {"type" => "number", "minimum" => 0, "multipleOf" => 0.25},
+        "text" => {"type" => "string", "minLength" => 1, "pattern" => "^x"},
+        "items" => {"type" => "array", "prefixItems" => [{"type" => "integer"}], "contains" => true}
+      }
+    }
+    validator = Schemurai.compile(schema, backend: :vm)
+
+    GC.start
+    GC.compact
+
+    expect(validator.valid?({"enabled" => true, "number" => 1.25, "text" => "x", "items" => [1]})).to be(true)
   end
 
   it "falls back for unsupported nested instance values reached by a program", :aggregate_failures do
@@ -148,5 +193,26 @@ RSpec.describe "the VM backend" do
     expect(compiler.instance_variables).to be_empty
     expect(first.valid?(1)).to be(true)
     expect(second.valid?("bad")).to be(false)
+  end
+
+  it "evaluates shared dynamic programs concurrently in independent Ractors" do # rubocop:disable RSpec/ExampleLength
+    schema = {
+      "$schema" => "https://json-schema.org/draft/2020-12/schema",
+      "$id" => "urn:node",
+      "$dynamicAnchor" => "node",
+      "type" => "object",
+      "properties" => {"child" => {"$dynamicRef" => "#node"}}
+    }
+    registry = Schemurai::SchemaRegistry.new(schemas: {"urn:node" => schema}, backend: :vm)
+    registry.make_shareable
+
+    ractors = 4.times.map do
+      Ractor.new(registry) do |shared|
+        validator = shared.validator_for("urn:node")
+        100.times.all? { validator.valid?({"child" => {}}) }
+      end
+    end
+
+    expect(ractors.map { |ractor| ractor.respond_to?(:value) ? ractor.value : ractor.take }).to all(be(true))
   end
 end

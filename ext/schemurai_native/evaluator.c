@@ -56,18 +56,8 @@ VALUE decimal(VALUE value) {
     return value;
   return rb_funcall(rb_mKernel, id_rational, 1, rb_funcall(value, id_to_s, 0));
 }
-static VALUE cached_decimal(evaluator_t *e, VALUE value) {
-  if (RB_INTEGER_TYPE_P(value))
-    return value;
-  VALUE found = rb_hash_lookup2(e->decimals, value, Qundef);
-  if (found != Qundef)
-    return found;
-  found = decimal(value);
-  rb_hash_aset(e->decimals, value, found);
-  return found;
-}
 static bool valid_number(evaluator_t *e, rule_t *r, VALUE value) {
-  VALUE actual = (r->mask & NUM_MULTIPLE_OF) ? cached_decimal(e, value) : value;
+  VALUE actual = (r->mask & NUM_MULTIPLE_OF) ? decimal(value) : value;
   if ((r->mask & NUM_MAXIMUM) && compare_values(actual, r->as.number.maximum) > 0)
     return false;
   if ((r->mask & NUM_MINIMUM) && compare_values(actual, r->as.number.minimum) < 0)
@@ -120,6 +110,44 @@ bool json_equal(evaluator_t *e, VALUE left, VALUE right) {
     return true;
   }
   return RTEST(rb_equal(left, right));
+}
+
+static VALUE unique_scalar_key(VALUE value) {
+  if (CLASS_OF(value) == rb_cFloat && integer_p(value))
+    return rb_funcall(value, id_to_i, 0);
+  if (NIL_P(value) || value == Qtrue || value == Qfalse || RB_INTEGER_TYPE_P(value) || CLASS_OF(value) == rb_cFloat ||
+      CLASS_OF(value) == rb_cString)
+    return value;
+  return Qundef;
+}
+
+bool unique_items(evaluator_t *e, VALUE value) {
+  VALUE scalars = Qnil, structures = Qnil;
+  for (long i = 0; i < RARRAY_LEN(value); i++) {
+    VALUE item = rb_ary_entry(value, i);
+    if (!supported_value(item)) {
+      e->unsupported_instance = true;
+      return false;
+    }
+    VALUE key = unique_scalar_key(item);
+    if (key != Qundef) {
+      if (NIL_P(scalars))
+        scalars = rb_hash_new();
+      if (rb_hash_lookup2(scalars, key, Qundef) != Qundef)
+        return false;
+      rb_hash_aset(scalars, key, Qtrue);
+      continue;
+    }
+    if (NIL_P(structures)) {
+      structures = rb_ary_new();
+    } else {
+      for (long j = 0; j < RARRAY_LEN(structures); j++)
+        if (json_equal(e, rb_ary_entry(structures, j), item))
+          return false;
+    }
+    rb_ary_push(structures, item);
+  }
+  return true;
 }
 
 VALUE protected_func(VALUE arg) {
@@ -309,11 +337,8 @@ static evaluation_t valid_array(evaluator_t *e, rule_t *r, VALUE value, evaluati
     return evaluation(false);
   if (!NIL_P(r->as.array.min_items) && len < NUM2LONG(r->as.array.min_items))
     return evaluation(false);
-  if (r->as.array.unique)
-    for (long i = 1; i < len; i++)
-      for (long j = 0; j < i; j++)
-        if (json_equal(e, rb_ary_entry(value, j), rb_ary_entry(value, i)))
-          return evaluation(false);
+  if (r->as.array.unique && !unique_items(e, value))
+    return evaluation(false);
   if (!NIL_P(r->as.array.prefix_items))
     for (long i = 0; i < RARRAY_LEN(r->as.array.prefix_items) && i < len; i++) {
       evaluation_t x = evaluate_program(e, rb_ary_entry(r->as.array.prefix_items, i), rb_ary_entry(value, i));
@@ -820,7 +845,6 @@ VALUE compiler_evaluator(int argc, VALUE *argv, VALUE self) {
   RB_OBJ_WRITE(evaluator, &e->regexps, rb_hash_new());
   RB_OBJ_WRITE(evaluator, &e->resolved, rb_hash_new());
   rb_funcall(e->resolved, id_compare_by_identity, 0);
-  RB_OBJ_WRITE(evaluator, &e->decimals, rb_hash_new());
   RB_OBJ_WRITE(evaluator, &e->dynamic_scope, rb_ary_new());
   e->content = RTEST(rb_hash_aref(options, sym_content));
   e->format = RTEST(rb_hash_aref(options, sym_format));

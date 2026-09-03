@@ -121,7 +121,7 @@ typedef struct {
 } scope_cache_entry_t;
 typedef struct {
   VALUE graph, compiler, root;
-  VALUE regexps, resolved, decimals, dynamic_scope;
+  VALUE regexps, resolved, dynamic_scope;
   VALUE instance_path, schema_path, errors;
   active_entry_t *active;
   size_t active_length, active_capacity;
@@ -172,6 +172,7 @@ void merge_locations(VALUE *target, VALUE source);
 void merge_evaluation(evaluation_t *target, evaluation_t source);
 uint32_t instance_type(VALUE value, bool integer);
 bool json_equal(evaluator_t *e, VALUE left, VALUE right);
+bool unique_items(evaluator_t *e, VALUE value);
 VALUE protected_func(VALUE arg);
 VALUE regexp_for(evaluator_t *e, VALUE pattern);
 bool active_enter(evaluator_t *e, VALUE source, VALUE instance);
