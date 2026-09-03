@@ -48,6 +48,19 @@ RSpec.describe "the VM backend" do
       .to eq([["/extra", "/unevaluatedProperties"]])
   end
 
+  it "collects applicator annotations only when unevaluated keywords need them" do # rubocop:disable RSpec/ExampleLength
+    schema = {
+      "$schema" => "https://json-schema.org/draft/2020-12/schema",
+      "anyOf" => [
+        {"properties" => {"first" => true}},
+        {"properties" => {"second" => true}}
+      ],
+      "unevaluatedProperties" => false
+    }
+
+    expect(Schemurai.valid?(schema, {"first" => 1, "second" => 2}, backend: :vm)).to be(true)
+  end
+
   it "snapshots nested mutable operands without freezing the source schema", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
     schema = {
       "$schema" => "https://json-schema.org/draft/2020-12/schema",
