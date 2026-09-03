@@ -3,17 +3,17 @@
 require_relative "spec_helper"
 
 RSpec.describe "the VM backend" do
-  it "compiles schema nodes into native instruction streams", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
+  it "keeps native instruction data behind the evaluator boundary", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
     validator = Schemurai.compile(
       {"type" => "object", "properties" => {"name" => {"type" => "string"}}},
       backend: :vm
     )
     evaluator = validator.instance_variable_get(:@evaluator)
-    program = evaluator.instance_variable_get(:@root)
-    expect(program).to be_frozen
-    expect(program.instruction_count).to eq(1)
     vm = Schemurai.const_get(:VM)
-    expect(vm::Compiler.instance_method(:compile).source_location).to be_nil
+
+    expect(vm.constants(false)).to contain_exactly(:Compiler, :Evaluator)
+    expect(vm::Compiler.public_instance_methods(false)).to contain_exactly(:compile_all, :evaluator)
+    expect(evaluator.instance_variables).to be_empty
     expect(vm::Evaluator.instance_method(:valid?).source_location).to be_nil
     expect(vm::Evaluator.instance_method(:validate).source_location).to be_nil
   end
@@ -65,6 +65,8 @@ RSpec.describe "the VM backend" do
     pattern = schema.dig("properties", "name", "pattern")
     required_kind = schema.fetch("required").first
     validator = Schemurai.compile(schema, backend: :vm)
+    GC.start
+    GC.compact
 
     valid = {"kind" => {"tag" => ["fixed"]}, "value" => {"tag" => ["fixed"]}, "name" => "fixed"}
     invalid = [
@@ -118,14 +120,10 @@ RSpec.describe "the VM backend" do
     first = registry.validator_for("urn:wrapper")
     second = registry.validator_for("urn:wrapper")
     compiler = registry.instance_variable_get(:@compiler)
-    first_evaluator = first.instance_variable_get(:@evaluator)
-    second_evaluator = second.instance_variable_get(:@evaluator)
 
     expect(compiler).to be_frozen
     expect(Ractor.shareable?(compiler)).to be(true)
-    expect(first_evaluator.instance_variable_get(:@compiler)).to equal(compiler)
-    expect(second_evaluator.instance_variable_get(:@compiler)).to equal(compiler)
-    expect(first_evaluator.instance_variable_get(:@root)).to equal(second_evaluator.instance_variable_get(:@root))
+    expect(compiler.instance_variables).to be_empty
     expect(first.valid?(1)).to be(true)
     expect(second.valid?("bad")).to be(false)
   end
