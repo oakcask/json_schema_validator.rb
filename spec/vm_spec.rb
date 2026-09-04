@@ -277,6 +277,26 @@ RSpec.describe "the VM backend" do
     end
   end
 
+  it "propagates unexpected format exceptions and remains reusable", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
+    schema = {"format" => "date"}
+    validators = %i[ruby vm].map { |backend| Schemurai.compile(schema, backend: backend, format: true) }
+    formats = Schemurai.const_get(:Internal).const_get(:Formats)
+    format_class = formats.resolve("date").class
+    original_call = format_class.instance_method(:call)
+
+    begin
+      format_class.define_method(:call) { |_value| raise "format callback failed" }
+      validators.each do |validator|
+        expect { validator.valid?("2026-09-04") }.to raise_error(RuntimeError, "format callback failed")
+        expect { validator.validate("2026-09-04") }.to raise_error(RuntimeError, "format callback failed")
+      end
+    ensure
+      format_class.define_method(:call, original_call)
+    end
+
+    expect(validators.map { |validator| validator.valid?("2026-09-04") }).to eq([true, true])
+  end
+
   it "falls back for unsupported nested instance values reached by a program", :aggregate_failures do
     value = +"x"
     value.define_singleton_method(:length) { 2 }

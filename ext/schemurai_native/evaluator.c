@@ -172,15 +172,6 @@ VALUE protected_func(VALUE arg) {
   struct protected_call *c = (struct protected_call *)arg;
   return rb_funcallv(c->receiver, c->method, c->argc, c->argv);
 }
-static bool protected_truth(struct protected_call *call) {
-  int state = 0;
-  VALUE result = rb_protect(protected_func, (VALUE)call, &state);
-  if (state) {
-    rb_set_errinfo(Qnil);
-    return false;
-  }
-  return RTEST(result);
-}
 VALUE regexp_for(evaluator_t *e, VALUE pattern) {
   VALUE found = rb_hash_lookup2(e->regexps, pattern, Qundef);
   if (found != Qundef)
@@ -222,20 +213,13 @@ static bool valid_string(evaluator_t *e, rule_t *r, VALUE value) {
     if (!RTEST(matched))
       return false;
   }
-  if (!NIL_P(r->as.string.format) && (e->format || r->as.string.format_assertion)) {
-    struct protected_call c = {r->as.string.format, id_call, 1, {value}};
-    if (!protected_truth(&c))
-      return false;
-  }
-  if (e->content && (r->as.string.decode_base64 || r->as.string.parse_json)) {
-    struct protected_call c = {
-        mNativeSupport,
-        id_valid_content_p,
-        3,
-        {value, r->as.string.decode_base64 ? Qtrue : Qfalse, r->as.string.parse_json ? Qtrue : Qfalse}};
-    if (!protected_truth(&c))
-      return false;
-  }
+  if (!NIL_P(r->as.string.format) && (e->format || r->as.string.format_assertion) &&
+      !RTEST(rb_funcall(r->as.string.format, id_call, 1, value)))
+    return false;
+  if (e->content && (r->as.string.decode_base64 || r->as.string.parse_json) &&
+      !RTEST(rb_funcall(mNativeSupport, id_valid_content_p, 3, value, r->as.string.decode_base64 ? Qtrue : Qfalse,
+                        r->as.string.parse_json ? Qtrue : Qfalse)))
+    return false;
   return true;
 }
 
