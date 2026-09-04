@@ -278,23 +278,36 @@ RSpec.describe "the VM backend" do
   end
 
   it "propagates unexpected format exceptions and remains reusable", :aggregate_failures do # rubocop:disable RSpec/ExampleLength
-    schema = {"format" => "date"}
+    schema = {
+      "$id" => "urn:format-callback",
+      "type" => "object",
+      "properties" => {
+        "next" => {"$ref" => "urn:format-callback"},
+        "value" => {"format" => "date"}
+      }
+    }
+    instance = {"value" => "2026-09-04"}
+    50.times { instance = {"next" => instance} }
     validators = %i[ruby vm].map { |backend| Schemurai.compile(schema, backend: backend, format: true) }
     formats = Schemurai.const_get(:Internal).const_get(:Formats)
     format_class = formats.resolve("date").class
     original_call = format_class.instance_method(:call)
 
     begin
-      format_class.define_method(:call) { |_value| raise "format callback failed" }
+      format_class.define_method(:call) do |_value|
+        GC.start
+        GC.compact
+        raise "format callback failed"
+      end
       validators.each do |validator|
-        expect { validator.valid?("2026-09-04") }.to raise_error(RuntimeError, "format callback failed")
-        expect { validator.validate("2026-09-04") }.to raise_error(RuntimeError, "format callback failed")
+        expect { validator.valid?(instance) }.to raise_error(RuntimeError, "format callback failed")
+        expect { validator.validate(instance) }.to raise_error(RuntimeError, "format callback failed")
       end
     ensure
       format_class.define_method(:call, original_call)
     end
 
-    expect(validators.map { |validator| validator.valid?("2026-09-04") }).to eq([true, true])
+    expect(validators.map { |validator| validator.valid?(instance) }).to eq([true, true])
   end
 
   it "falls back for unsupported nested instance values reached by a program", :aggregate_failures do
