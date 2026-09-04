@@ -236,7 +236,6 @@ VALUE compiler_compile(VALUE self, VALUE node) {
   RB_OBJ_WRITE(program, &p->node, node);
   p->resource = Qnil;
   p->dynamic_anchor = Qnil;
-  rb_hash_aset(c->programs, node, program);
   VALUE schema = rb_funcall(node, id_schema, 0);
   if (RB_TYPE_P(schema, T_HASH)) {
     p->recursive_anchor = hget(schema, STATIC_STRING(RECURSIVE_ANCHOR)) == Qtrue;
@@ -347,6 +346,7 @@ finish:
   if (p->flags & FLAG_DYNAMIC_SCOPE)
     RB_OBJ_WRITE(program, &p->resource, rb_funcall(node, id_resource, 0));
   rb_obj_freeze(program);
+  rb_hash_aset(c->programs, node, program);
   return program;
 }
 

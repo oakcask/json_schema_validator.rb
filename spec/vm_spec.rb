@@ -30,6 +30,15 @@ RSpec.describe "the VM backend" do
     expect(validator.validate(1.5).errors.map(&:keyword)).to eq(["type"])
   end
 
+  it "does not publish a partially compiled program after compilation raises" do
+    registry = Schemurai::SchemaRegistry.new(backend: :vm)
+    schema = {"type" => 1}
+
+    2.times do
+      expect { registry.compile(schema) }.to raise_error(TypeError, /String/)
+    end
+  end
+
   it "preserves detailed errors for fused type and constraint instructions" do
     validator = Schemurai.compile({"type" => "integer", "minimum" => 0}, backend: :vm)
 
