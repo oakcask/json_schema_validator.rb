@@ -30,13 +30,37 @@ RSpec.describe "the VM backend" do
     expect(validator.validate(1.5).errors.map(&:keyword)).to eq(["type"])
   end
 
-  it "does not publish a partially compiled program after compilation raises" do
+  it "does not publish a partially compiled program after compilation raises" do # rubocop:disable RSpec/ExampleLength
     registry = Schemurai::SchemaRegistry.new(backend: :vm)
-    schema = {"type" => 1}
 
-    2.times do
-      expect { registry.compile(schema) }.to raise_error(TypeError, /String/)
+    cases = [
+      [{"type" => 1}, TypeError],
+      [{"type" => "unknown"}, KeyError],
+      [{"type" => ["string", "unknown"]}, KeyError],
+      [{"$ref" => 1}, TypeError],
+      [{"enum" => 1}, TypeError],
+      [{"allOf" => 1}, TypeError],
+      [{"properties" => 1}, TypeError],
+      [{"patternProperties" => 1}, TypeError],
+      [{"dependencies" => 1}, TypeError],
+      [{"required" => 1}, TypeError],
+      [{"$schema" => "https://json-schema.org/draft/2020-12/schema", "dependentRequired" => 1}, TypeError],
+      [{"$schema" => "https://json-schema.org/draft/2020-12/schema", "dependentRequired" => {"x" => 1}}, TypeError],
+      [{"$schema" => "https://json-schema.org/draft/2020-12/schema", "dependentSchemas" => 1}, TypeError]
+    ]
+    cases.each do |schema, error_class|
+      2.times do
+        expect { registry.compile(schema) }.to raise_error(error_class)
+      end
     end
+  end
+
+  it "preserves Ruby string semantics for references containing null bytes", :aggregate_failures do
+    schema = {"$ref" => "urn:missing\0#fragment"}
+    validators = %i[ruby vm].map { |backend| Schemurai.compile(schema, backend: backend) }
+
+    expect(validators.map { |validator| validator.valid?(nil) }).to eq([false, false])
+    expect(validators.map { |validator| validator.validate(nil).errors.map(&:keyword) }).to eq([["$ref"], ["$ref"]])
   end
 
   it "preserves detailed errors for fused type and constraint instructions" do

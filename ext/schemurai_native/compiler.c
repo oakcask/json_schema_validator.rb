@@ -25,6 +25,44 @@ static VALUE snapshot(VALUE value) {
 
 VALUE compiler_compile(VALUE self, VALUE node);
 
+static uint32_t compile_type_bit(VALUE name) {
+  Check_Type(name, T_STRING);
+  if (rb_str_equal(name, STATIC_STRING(NULL_TYPE)))
+    return TYPE_NULL;
+  if (rb_str_equal(name, STATIC_STRING(BOOLEAN_TYPE)))
+    return TYPE_BOOLEAN;
+  if (rb_str_equal(name, STATIC_STRING(OBJECT_TYPE)))
+    return TYPE_OBJECT;
+  if (rb_str_equal(name, STATIC_STRING(ARRAY_TYPE)))
+    return TYPE_ARRAY;
+  if (rb_str_equal(name, STATIC_STRING(NUMBER_TYPE)))
+    return TYPE_NUMBER;
+  if (rb_str_equal(name, STATIC_STRING(INTEGER_TYPE)))
+    return TYPE_INTEGER;
+  if (rb_str_equal(name, STATIC_STRING(STRING_TYPE)))
+    return TYPE_STRING;
+  rb_raise(rb_eKeyError, "unknown schema type");
+}
+
+static uint8_t compile_type_opcode(VALUE name) {
+  switch (compile_type_bit(name)) {
+  case TYPE_NULL:
+    return OP_TYPE_NULL;
+  case TYPE_BOOLEAN:
+    return OP_TYPE_BOOLEAN;
+  case TYPE_OBJECT:
+    return OP_TYPE_OBJECT;
+  case TYPE_ARRAY:
+    return OP_TYPE_ARRAY;
+  case TYPE_NUMBER:
+    return OP_TYPE_NUMBER;
+  case TYPE_INTEGER:
+    return OP_TYPE_INTEGER;
+  default:
+    return OP_TYPE_STRING;
+  }
+}
+
 static VALUE compile_child(VALUE self, VALUE node, VALUE parent) {
   VALUE child = compiler_compile(self, node);
   program_t *c, *p;
@@ -36,19 +74,25 @@ static VALUE compile_child(VALUE self, VALUE node, VALUE parent) {
 }
 
 static VALUE compile_reference(VALUE reference) {
+  Check_Type(reference, T_STRING);
   VALUE rule = rule_new(RULE_REFERENCE);
   rule_t *r;
   TypedData_Get_Struct(rule, rule_t, &rule_type, r);
-  RB_OBJ_WRITE(rule, &r->as.reference.value, snapshot(reference));
-  const char *ptr = StringValueCStr(reference), *hash = strchr(ptr, '#');
-  RB_OBJ_WRITE(rule, &r->as.reference.fragment, hash ? rb_str_new_cstr(hash + 1) : Qnil);
+  VALUE value = snapshot(reference);
+  RB_OBJ_WRITE(rule, &r->as.reference.value, value);
+  const char *ptr = RSTRING_PTR(value), *hash = memchr(ptr, '#', (size_t)RSTRING_LEN(value));
+  VALUE fragment =
+      hash ? rb_str_substr(value, (long)(hash - ptr + 1), RSTRING_LEN(value) - (long)(hash - ptr + 1)) : Qnil;
+  RB_OBJ_WRITE(rule, &r->as.reference.fragment, NIL_P(fragment) ? Qnil : rb_str_new_frozen(fragment));
   return rb_obj_freeze(rule);
 }
 
 static VALUE compile_map(VALUE self, VALUE node, VALUE parent, VALUE schema, VALUE keyword) {
-  VALUE source = hget(schema, keyword), result = rb_hash_new();
-  if (NIL_P(source))
+  VALUE result = rb_hash_new();
+  if (!hkey(schema, keyword))
     return rb_obj_freeze(result);
+  VALUE source = hget(schema, keyword);
+  Check_Type(source, T_HASH);
   VALUE keys = rb_funcall(source, id_keys, 0);
   for (long i = 0; i < RARRAY_LEN(keys); i++) {
     VALUE key = rb_ary_entry(keys, i);
@@ -94,6 +138,7 @@ static VALUE compile_string(VALUE node, VALUE schema) {
 }
 
 static VALUE compile_program_list(VALUE self, VALUE node, VALUE parent, VALUE source, VALUE keyword) {
+  Check_Type(source, T_ARRAY);
   long n = RARRAY_LEN(source);
   VALUE list = rb_ary_new_capa(n);
   for (long i = 0; i < n; i++)
@@ -142,8 +187,11 @@ static VALUE compile_array(VALUE self, VALUE node, VALUE parent, VALUE schema) {
 }
 
 static VALUE compile_dependencies(VALUE self, VALUE node, VALUE parent, VALUE schema) {
+  if (!hkey(schema, STATIC_STRING(DEPENDENCIES)))
+    return Qnil;
   VALUE source = hget(schema, STATIC_STRING(DEPENDENCIES));
-  if (NIL_P(source) || RHASH_EMPTY_P(source))
+  Check_Type(source, T_HASH);
+  if (RHASH_EMPTY_P(source))
     return Qnil;
   VALUE out = rb_hash_new(), keys = rb_funcall(source, id_keys, 0);
   for (long i = 0; i < RARRAY_LEN(keys); i++) {
@@ -156,13 +204,27 @@ static VALUE compile_dependencies(VALUE self, VALUE node, VALUE parent, VALUE sc
   return rb_obj_freeze(out);
 }
 
+static VALUE compile_dependent_required(VALUE schema) {
+  if (!hkey(schema, STATIC_STRING(DEPENDENT_REQUIRED)))
+    return Qnil;
+  VALUE source = hget(schema, STATIC_STRING(DEPENDENT_REQUIRED));
+  Check_Type(source, T_HASH);
+  VALUE keys = rb_funcall(source, id_keys, 0);
+  for (long i = 0; i < RARRAY_LEN(keys); i++)
+    Check_Type(rb_hash_aref(source, rb_ary_entry(keys, i)), T_ARRAY);
+  return RHASH_EMPTY_P(source) ? Qnil : snapshot(source);
+}
+
 static VALUE compile_object(VALUE self, VALUE node, VALUE parent, VALUE schema) {
   VALUE obj = rule_new(RULE_OBJECT);
   rule_t *r;
   TypedData_Get_Struct(obj, rule_t, &rule_type, r);
   RB_OBJ_WRITE(obj, &r->as.object.max_properties, hget(schema, STATIC_STRING(MAX_PROPERTIES)));
   RB_OBJ_WRITE(obj, &r->as.object.min_properties, hget(schema, STATIC_STRING(MIN_PROPERTIES)));
-  RB_OBJ_WRITE(obj, &r->as.object.required, snapshot(hget(schema, STATIC_STRING(REQUIRED))));
+  VALUE required = hget(schema, STATIC_STRING(REQUIRED));
+  if (!NIL_P(required))
+    Check_Type(required, T_ARRAY);
+  RB_OBJ_WRITE(obj, &r->as.object.required, snapshot(required));
   RB_OBJ_WRITE(obj, &r->as.object.properties, compile_map(self, node, parent, schema, STATIC_STRING(PROPERTIES)));
   VALUE map = compile_map(self, node, parent, schema, STATIC_STRING(PATTERN_PROPERTIES));
   RB_OBJ_WRITE(obj, &r->as.object.patterns, RHASH_EMPTY_P(map) ? Qnil : map);
@@ -175,9 +237,7 @@ static VALUE compile_object(VALUE self, VALUE node, VALUE parent, VALUE schema) 
     RB_OBJ_WRITE(obj, &r->as.object.property_names,
                  compile_child(self, node_child(node, STATIC_STRING(PROPERTY_NAMES), Qnil, false), parent));
   RB_OBJ_WRITE(obj, &r->as.object.dependencies, compile_dependencies(self, node, parent, schema));
-  VALUE dep_req = hget(schema, STATIC_STRING(DEPENDENT_REQUIRED));
-  RB_OBJ_WRITE(obj, &r->as.object.dependent_required,
-               NIL_P(dep_req) || RHASH_EMPTY_P(dep_req) ? Qnil : snapshot(dep_req));
+  RB_OBJ_WRITE(obj, &r->as.object.dependent_required, compile_dependent_required(schema));
   map = compile_map(self, node, parent, schema, STATIC_STRING(DEPENDENT_SCHEMAS));
   RB_OBJ_WRITE(obj, &r->as.object.dependent_schemas, RHASH_EMPTY_P(map) ? Qnil : map);
   if (hkey(schema, STATIC_STRING(UNEVALUATED_PROPERTIES))) {
@@ -267,47 +327,20 @@ VALUE compiler_compile(VALUE self, VALUE node) {
         VALUE rule = rule_new(RULE_TYPES);
         rule_t *r;
         TypedData_Get_Struct(rule, rule_t, &rule_type, r);
-        for (long i = 0; i < RARRAY_LEN(types); i++) {
-          VALUE type_name = rb_ary_entry(types, i);
-          const char *name = StringValueCStr(type_name);
-          if (!strcmp(name, "null"))
-            r->mask |= TYPE_NULL;
-          else if (!strcmp(name, "boolean"))
-            r->mask |= TYPE_BOOLEAN;
-          else if (!strcmp(name, "object"))
-            r->mask |= TYPE_OBJECT;
-          else if (!strcmp(name, "array"))
-            r->mask |= TYPE_ARRAY;
-          else if (!strcmp(name, "number"))
-            r->mask |= TYPE_NUMBER;
-          else if (!strcmp(name, "integer"))
-            r->mask |= TYPE_INTEGER;
-          else if (!strcmp(name, "string"))
-            r->mask |= TYPE_STRING;
-        }
+        for (long i = 0; i < RARRAY_LEN(types); i++)
+          r->mask |= compile_type_bit(rb_ary_entry(types, i));
         RB_OBJ_WRITE(rule, &r->as.types.names, snapshot(types));
         emit(program, OP_TYPES, rb_obj_freeze(rule));
       } else {
-        const char *name = StringValueCStr(types);
-        uint8_t op = OP_TYPE_STRING;
-        if (!strcmp(name, "null"))
-          op = OP_TYPE_NULL;
-        else if (!strcmp(name, "boolean"))
-          op = OP_TYPE_BOOLEAN;
-        else if (!strcmp(name, "object"))
-          op = OP_TYPE_OBJECT;
-        else if (!strcmp(name, "array"))
-          op = OP_TYPE_ARRAY;
-        else if (!strcmp(name, "number"))
-          op = OP_TYPE_NUMBER;
-        else if (!strcmp(name, "integer"))
-          op = OP_TYPE_INTEGER;
-        emit(program, op, Qnil);
+        emit(program, compile_type_opcode(types), Qnil);
       }
     }
     if (mask & 2) {
-      if (hkey(schema, STATIC_STRING(ENUM)))
-        emit(program, OP_ENUM, snapshot(hget(schema, STATIC_STRING(ENUM))));
+      if (hkey(schema, STATIC_STRING(ENUM))) {
+        VALUE values = hget(schema, STATIC_STRING(ENUM));
+        Check_Type(values, T_ARRAY);
+        emit(program, OP_ENUM, snapshot(values));
+      }
       if (hkey(schema, STATIC_STRING(CONST)))
         emit(program, OP_CONST, snapshot(hget(schema, STATIC_STRING(CONST))));
     }
