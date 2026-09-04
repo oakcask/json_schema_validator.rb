@@ -238,8 +238,9 @@ void emit(VALUE program, uint8_t opcode, VALUE operand) {
   program_t *p;
   TypedData_Get_Struct(program, program_t, &program_type, p);
   if (p->length == p->capacity) {
-    p->capacity = p->capacity ? p->capacity * 2 : 8;
-    REALLOC_N(p->instructions, instruction_t, p->capacity);
+    size_t capacity = p->capacity ? p->capacity * 2 : 8;
+    REALLOC_N(p->instructions, instruction_t, capacity);
+    p->capacity = capacity;
   }
   RB_OBJ_WRITE(program, &p->instructions[p->length].operand, operand);
   p->instructions[p->length].opcode = opcode;

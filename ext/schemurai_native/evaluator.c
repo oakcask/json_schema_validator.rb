@@ -337,8 +337,9 @@ static void cache_scope_target(evaluator_t *e, VALUE rule, VALUE target) {
   if (length > CACHED_SCOPE_LIMIT || e->scope_cache_length >= CACHED_SCOPE_ENTRY_LIMIT)
     return;
   if (e->scope_cache_length == e->scope_cache_capacity) {
-    e->scope_cache_capacity = e->scope_cache_capacity ? e->scope_cache_capacity * 2 : 4;
-    REALLOC_N(e->scope_cache, scope_cache_entry_t, e->scope_cache_capacity);
+    size_t capacity = e->scope_cache_capacity ? e->scope_cache_capacity * 2 : 4;
+    REALLOC_N(e->scope_cache, scope_cache_entry_t, capacity);
+    e->scope_cache_capacity = capacity;
   }
   scope_cache_entry_t *entry = &e->scope_cache[e->scope_cache_length++];
   entry->rule = rule;
