@@ -9,7 +9,7 @@ workflow_with(paths, uses) := {
   "jobs": {
     "test": {
       "runs-on": "ubuntu-latest",
-      "timeout-minutes": 10,
+      "timeout-minutes": 5,
       "steps": [{"uses": uses}],
     },
   },
@@ -22,7 +22,7 @@ workflow_with_run(run) := {
   "jobs": {
     "test": {
       "runs-on": "ubuntu-latest",
-      "timeout-minutes": 10,
+      "timeout-minutes": 5,
       "steps": [{
         "name": "Prepare reports",
         "run": run,
@@ -81,7 +81,7 @@ test_requires_each_local_action_manifest if {
     "jobs": {
       "test": {
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 10,
+        "timeout-minutes": 5,
         "steps": [
           {"uses": "./.github/actions/first"},
           {"uses": "./.github/actions/second"},
@@ -109,7 +109,7 @@ test_accepts_local_action_without_path_filter if {
     "jobs": {
       "test": {
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 10,
+        "timeout-minutes": 5,
         "steps": [{"uses": "./.github/actions/example"}],
       },
     },
