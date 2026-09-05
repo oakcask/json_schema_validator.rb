@@ -427,6 +427,8 @@ RSpec.describe "the VM backend" do
   end
 
   it "evaluates shared dynamic programs concurrently in independent Ractors" do # rubocop:disable RSpec/ExampleLength
+    skip "Ruby #21537 can deadlock during Ractor GC on Windows" if Gem.win_platform? && RUBY_VERSION.start_with?("4.")
+
     schema = {
       "$schema" => "https://json-schema.org/draft/2020-12/schema",
       "$id" => "urn:node",

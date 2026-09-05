@@ -26,6 +26,7 @@ env:
 
 jobs:
   vm-differential:
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
