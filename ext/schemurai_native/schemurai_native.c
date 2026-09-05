@@ -48,7 +48,7 @@ static size_t program_size(const void *ptr) {
   return sizeof(*p) + p->capacity * sizeof(instruction_t);
 }
 const rb_data_type_t program_type = {"Schemurai::VM::Program",
-                                     {program_mark, program_free, program_size, program_compact},
+                                     {program_mark, program_free, program_size, program_compact, {0}},
                                      0,
                                      0,
                                      RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED |
@@ -133,11 +133,12 @@ static void rule_compact(void *ptr) {
 static size_t rule_size(const void *ptr) {
   return sizeof(rule_t);
 }
-const rb_data_type_t rule_type = {"Schemurai::VM::Rule",
-                                  {rule_mark, RUBY_TYPED_DEFAULT_FREE, rule_size, rule_compact},
-                                  0,
-                                  0,
-                                  RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FROZEN_SHAREABLE};
+const rb_data_type_t rule_type = {
+    "Schemurai::VM::Rule",
+    {rule_mark, RUBY_TYPED_DEFAULT_FREE, rule_size, rule_compact, {0}},
+    0,
+    0,
+    RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FROZEN_SHAREABLE};
 
 static void compiler_mark(void *ptr) {
   compiler_t *c = ptr;
@@ -153,7 +154,7 @@ static size_t compiler_size(const void *ptr) {
   return sizeof(compiler_t);
 }
 const rb_data_type_t compiler_type = {"Schemurai::VM::Compiler",
-                                      {compiler_mark, RUBY_TYPED_DEFAULT_FREE, compiler_size, compiler_compact},
+                                      {compiler_mark, RUBY_TYPED_DEFAULT_FREE, compiler_size, compiler_compact, {0}},
                                       0,
                                       0,
                                       RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED |
@@ -207,7 +208,7 @@ static size_t evaluator_size(const void *ptr) {
   return sizeof(*e) + e->scope_cache_capacity * sizeof(scope_cache_entry_t);
 }
 const rb_data_type_t evaluator_type = {"Schemurai::VM::Evaluator",
-                                       {evaluator_mark, evaluator_free, evaluator_size, evaluator_compact},
+                                       {evaluator_mark, evaluator_free, evaluator_size, evaluator_compact, {0}},
                                        0,
                                        0,
                                        RUBY_TYPED_FREE_IMMEDIATELY};

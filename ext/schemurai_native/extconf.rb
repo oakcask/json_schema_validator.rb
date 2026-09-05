@@ -2,5 +2,7 @@
 
 require "mkmf"
 
-append_cflags("-std=c99 -Wall -Wextra -Wno-unused-parameter")
+cflags = %w[-std=c99 -Wall -Wextra -Wno-unused-parameter]
+cflags << "-Werror" if ENV["CI"]
+append_cflags(cflags.join(" "))
 create_makefile("schemurai_native")
