@@ -83,6 +83,14 @@ deny contains msg if {
   some job_name
   job := input.jobs[job_name]
   not job.uses
+  object.get(job, "timeout-minutes", null) == null
+  msg := sprintf("job %q must define timeout-minutes unless it uses a reusable workflow", [job_name])
+}
+
+deny contains msg if {
+  some job_name
+  job := input.jobs[job_name]
+  not job.uses
   count(object.get(job, "steps", [])) == 0
   msg := sprintf("job %q must define at least one step unless it uses a reusable workflow", [job_name])
 }
