@@ -133,12 +133,11 @@ static void rule_compact(void *ptr) {
 static size_t rule_size(const void *ptr) {
   return sizeof(rule_t);
 }
-const rb_data_type_t rule_type = {
-    "Schemurai::VM::Rule",
-    {rule_mark, RUBY_TYPED_DEFAULT_FREE, rule_size, rule_compact, {0}},
-    0,
-    0,
-    RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FROZEN_SHAREABLE};
+const rb_data_type_t rule_type = {"Schemurai::VM::Rule",
+                                  {rule_mark, RUBY_TYPED_DEFAULT_FREE, rule_size, rule_compact, {0}},
+                                  0,
+                                  0,
+                                  RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED | RUBY_TYPED_FROZEN_SHAREABLE};
 
 static void compiler_mark(void *ptr) {
   compiler_t *c = ptr;
