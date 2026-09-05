@@ -211,6 +211,24 @@ RSpec.describe "the VM backend" do
     expect(validator.valid?({"items" => [1, "tail"], "text" => "x"})).to be(true)
   end
 
+  it "retains evaluator options while compiling under GC stress" do # rubocop:disable RSpec/ExampleLength
+    previous_stress = GC.stress
+
+    begin
+      GC.stress = 1
+      validator = Schemurai.compile(
+        {"type" => "string", "format" => "date", "contentEncoding" => "base64"},
+        backend: :vm,
+        content: true,
+        format: true
+      )
+    ensure
+      GC.stress = previous_stress
+    end
+
+    expect(validator.valid?("not a date or base64")).to be(false)
+  end
+
   it "preserves regexp encoding errors across validity and detailed evaluation" do # rubocop:disable RSpec/ExampleLength
     invalid_value = +"\xFF"
     invalid_value.force_encoding(Encoding::UTF_8)

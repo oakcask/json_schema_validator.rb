@@ -858,6 +858,8 @@ evaluation_t evaluate_program_mode(evaluator_t *e, VALUE program, VALUE instance
 VALUE compiler_evaluator(int argc, VALUE *argv, VALUE self) {
   VALUE node, options;
   rb_scan_args(argc, argv, "1:", &node, &options);
+  bool content = RTEST(rb_hash_aref(options, sym_content));
+  bool format = RTEST(rb_hash_aref(options, sym_format));
   compiler_t *c;
   TypedData_Get_Struct(self, compiler_t, &compiler_type, c);
   VALUE evaluator = evaluator_alloc(cEvaluator);
@@ -872,8 +874,8 @@ VALUE compiler_evaluator(int argc, VALUE *argv, VALUE self) {
   RB_OBJ_WRITE(evaluator, &e->dynamic_scope, rb_ary_new());
   RB_OBJ_WRITE(evaluator, &e->active, rb_hash_new());
   rb_funcall(e->active, id_compare_by_identity, 0);
-  e->content = RTEST(rb_hash_aref(options, sym_content));
-  e->format = RTEST(rb_hash_aref(options, sym_format));
+  e->content = content;
+  e->format = format;
   e->unsupported_instance = false;
   return evaluator;
 }
