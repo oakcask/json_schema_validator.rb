@@ -9,6 +9,7 @@ workflow_with(paths, uses) := {
   "jobs": {
     "test": {
       "runs-on": "ubuntu-latest",
+      "timeout-minutes": 10,
       "steps": [{"uses": uses}],
     },
   },
@@ -21,6 +22,7 @@ workflow_with_run(run) := {
   "jobs": {
     "test": {
       "runs-on": "ubuntu-latest",
+      "timeout-minutes": 10,
       "steps": [{
         "name": "Prepare reports",
         "run": run,
@@ -79,6 +81,7 @@ test_requires_each_local_action_manifest if {
     "jobs": {
       "test": {
         "runs-on": "ubuntu-latest",
+        "timeout-minutes": 10,
         "steps": [
           {"uses": "./.github/actions/first"},
           {"uses": "./.github/actions/second"},
@@ -106,6 +109,7 @@ test_accepts_local_action_without_path_filter if {
     "jobs": {
       "test": {
         "runs-on": "ubuntu-latest",
+        "timeout-minutes": 10,
         "steps": [{"uses": "./.github/actions/example"}],
       },
     },
@@ -172,6 +176,35 @@ test_accepts_local_reusable_workflow_without_path_filter if {
     },
   }
   violations := deny with input as unfiltered
+  count(violations) == 0
+}
+
+test_accepts_job_with_timeout if {
+  violations := deny with input as workflow_with_run("echo ok")
+  count(violations) == 0
+}
+
+test_rejects_job_without_timeout if {
+  workflow := {
+    "name": "test / missing timeout",
+    "on": {"pull_request": {}},
+    "permissions": {"contents": "read"},
+    "jobs": {
+      "test": {
+        "runs-on": "ubuntu-latest",
+        "steps": [{"run": "echo ok"}],
+      },
+    },
+  }
+  violations := deny with input as workflow
+  violations["job \"test\" must define timeout-minutes unless it uses a reusable workflow"]
+}
+
+test_allows_reusable_workflow_job_without_timeout if {
+  violations := deny with input as workflow_with_reusable(
+    [".github/workflows/test--reusable-workflow.yaml"],
+    "example/repository/.github/workflows/shared.yaml@main",
+  )
   count(violations) == 0
 }
 
