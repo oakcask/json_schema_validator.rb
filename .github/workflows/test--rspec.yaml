@@ -46,6 +46,8 @@ jobs:
           cache-version: ${{ hashFiles('Gemfile.lock') }}
       - name: Build native VM evaluator
         run: bundle exec rake compile
+        env:
+          CFLAGS: -Werror
       - name: Run Ruby tests
         run: bundle exec rspec
       - name: Verify oracle case catalog

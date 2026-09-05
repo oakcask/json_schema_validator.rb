@@ -43,6 +43,8 @@ jobs:
           cache-version: benchmark-${{ hashFiles('Gemfile.lock') }}
       - name: Build native VM evaluator
         run: bundle exec rake compile
+        env:
+          CFLAGS: -Werror
       - name: Compare base and merge benchmarks
         run: bundle exec ruby script/benchmark-compare
         env:

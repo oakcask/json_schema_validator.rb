@@ -44,6 +44,8 @@ jobs:
           cache-version: vm-${{ matrix.os }}-${{ matrix.ruby-version }}-${{ hashFiles('Gemfile.lock') }}
       - name: Build native VM evaluator
         run: bundle exec rake compile
+        env:
+          CFLAGS: -Werror
       - name: Test and compare VM evaluator with the Ruby oracle
         run: bundle exec rspec -Ilib spec/vm_spec.rb test/evaluator_backend_test.rb
         env:
@@ -71,7 +73,7 @@ jobs:
       - name: Install gem with AddressSanitizer
         run: gem install --local schemurai.gem --no-document
         env:
-          CFLAGS: -fsanitize=address -fno-omit-frame-pointer -O1
+          CFLAGS: -Werror -fsanitize=address -fno-omit-frame-pointer -O1
           DLDFLAGS: -fsanitize=address
       - name: Exercise packaged native VM under AddressSanitizer
         run: |
@@ -102,7 +104,7 @@ jobs:
       - name: Install gem with UndefinedBehaviorSanitizer
         run: gem install --local schemurai.gem --no-document
         env:
-          CFLAGS: -fsanitize=undefined -fno-omit-frame-pointer -O1
+          CFLAGS: -Werror -fsanitize=undefined -fno-omit-frame-pointer -O1
           DLDFLAGS: -fsanitize=undefined
       - name: Exercise packaged native VM under UndefinedBehaviorSanitizer
         run: |

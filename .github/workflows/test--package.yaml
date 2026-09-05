@@ -64,5 +64,7 @@ jobs:
           name: schemurai-package
       - name: Install gem
         run: gem install --local schemurai.gem --no-document
+        env:
+          CFLAGS: -Werror
       - name: Run package smoke test
         run: ruby test/package_smoke_test.rb
